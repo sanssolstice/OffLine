@@ -44,6 +44,14 @@ create table if not exists public.offline_tokens (
 create index if not exists idx_offline_slots_date_window on public.offline_slots(slot_date,window_id,starts_at);
 create index if not exists idx_offline_tokens_student_status on public.offline_tokens(student_id,status,booked_at desc);
 create index if not exists idx_offline_tokens_window_status on public.offline_tokens(window_id,status,token_number);
+create index if not exists idx_offline_tokens_slot_id on public.offline_tokens(slot_id);
+create index if not exists idx_offline_windows_work_id on public.offline_windows(work_id);
+create index if not exists idx_offline_windows_staff_id on public.offline_windows(staff_id);
+create index if not exists idx_offline_events_token_id on public.offline_service_events(token_id);
+create index if not exists idx_offline_events_actor_id on public.offline_service_events(actor_id);
+create index if not exists idx_offline_breaks_window_id on public.offline_break_requests(window_id);
+create index if not exists idx_offline_breaks_requested_by on public.offline_break_requests(requested_by);
+create index if not exists idx_offline_breaks_reviewed_by on public.offline_break_requests(reviewed_by);
 create table if not exists public.offline_service_events (
  id uuid primary key default gen_random_uuid(), token_id uuid not null references public.offline_tokens(id) on delete cascade,
  actor_id uuid references public.offline_profiles(id) on delete set null,
@@ -142,8 +150,8 @@ begin
  if v_slot.starts_at<=now() then raise exception 'This slot has already started'; end if;
  select count(*) into v_used from public.offline_tokens where slot_id=p_slot_id and status in('booked','arrived','serving');
  if v_used>=v_slot.capacity then raise exception 'This slot is full. Please choose another one'; end if;
- select coalesce(max(t.token_number),0)+1 into v_num from public.offline_tokens t join public.offline_slots s on s.id=t.slot_id
- where t.window_id=v_slot.window_id and s.slot_date=v_slot.slot_date;
+ select coalesce(max(t.token_number),0)+1 into v_num from public.offline_tokens t
+ where t.window_id=v_slot.window_id;
  select count(*)+1 into v_pos from public.offline_tokens where slot_id=p_slot_id and status in('booked','arrived','serving');
  insert into public.offline_tokens(student_id,slot_id,window_id,token_number,queue_position)
  values(v_user,p_slot_id,v_slot.window_id,v_num,v_pos) returning * into v_token;
