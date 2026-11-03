@@ -366,12 +366,12 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
       if(p.role!=="staff"||p.account_status!=="active"){await supabase.auth.signOut();onSignedOut();go("/staff/login");return;}
       const [w,t]=await Promise.all([
         supabase.from("offline_windows").select("*").eq("staff_id",session.user.id).order("name"),
-        supabase.from("offline_tokens").select("*,slot:offline_slots(*),window:offline_windows(*)").order("booked_at",{ascending:false}).limit(500),
+        supabase.from("offline_tokens").select("*,slot:offline_slots(*),window:offline_windows(*),student:offline_profiles(full_name,college_id)").order("booked_at",{ascending:false}).limit(500),
       ]);
       const failed=[w,t].find(x=>x.error);if(failed?.error)throw failed.error;
       setProfile(p);setWindows(w.data||[]);
       const assignedIds=(w.data||[]).map(x=>x.id);
-      setTokens((t.data||[]).filter(x=>assignedIds.includes(x.window_id)));
+      setTokens((t.data||[]).filter(x=>assignedIds.includes(x.window_id)).map(x=>({...x,student_name:x.student?.full_name||"Student",student_college_id:x.student?.college_id||""})));
       if(!windowId&&w.data?.[0])setWindowId(w.data[0].id);
     }catch(e){setError(e.message||"Could not load staff workspace.");}
     finally{setLoading(false);}
@@ -453,6 +453,7 @@ function AdminWorkspace({go}) {
   const [modal,setModal]=useState("");
   const [createdCredentials,setCreatedCredentials]=useState([]);
   const [seedMessage,setSeedMessage]=useState("");
+  const [editRecord,setEditRecord]=useState(null);
   const [search,setSearch]=useState("");
   const [saving,setSaving]=useState(false);
 
@@ -466,7 +467,15 @@ function AdminWorkspace({go}) {
     let cancelled=false;
     if(!token){go("/admin/login");return;}
     setLoading(true);setError("");
-    adminCall(token,"dashboard").then(result=>{if(!cancelled)setData(result);})
+    adminCall(token,"dashboard").then(async result=>{
+      if(cancelled)return;
+      if((result.users||[]).length===0){
+        const seeded=await adminCall(token,"seed_demo");
+        if(!cancelled){setCreatedCredentials(seeded.users||[]);setSeedMessage(seeded.message||"Sample accounts created.");setPage("people");}
+        result=await adminCall(token,"dashboard");
+      }
+      if(!cancelled)setData(result);
+    })
       .catch(e=>{if(!cancelled){setError(e.message||"Admin session expired.");if((e.message||"").toLowerCase().includes("session")){sessionStorage.removeItem(ADMIN_SESSION_KEY);setToken("");go("/admin/login");}}})
       .finally(()=>{if(!cancelled)setLoading(false);});
     return()=>{cancelled=true;};
