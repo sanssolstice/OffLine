@@ -12,6 +12,11 @@ const ACTIVE = ['booked', 'arrived', 'serving']
 const isoDay = d => [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
 const plusDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x }
 const weekdays = (n=6) => { const out=[]; let d=new Date(); while(out.length<n){d=plusDays(d,1);if(d.getDay()!==0&&d.getDay()!==6)out.push(d)} return out }
+const makeWindowSlots = (windowId,duration) => weekdays(10).flatMap(d=>[9,10,11,13,14,15,16].map(h=>{
+  const start=new Date(d);start.setHours(h,0,0,0)
+  const end=new Date(d);end.setHours(h+1,0,0,0)
+  return {window_id:windowId,slot_date:isoDay(d),starts_at:start.toISOString(),ends_at:end.toISOString(),capacity:Math.max(1,Math.floor(45/Number(duration||10))),buffer_minutes:15}
+}))
 const time = s => new Date(s).toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'})
 const dateLabel = s => new Date(s+'T12:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})
 const dateTime = s => new Date(s).toLocaleString('en-IN',{weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})
@@ -161,7 +166,7 @@ export default function App(){
     }else{
       const s=slots.find(x=>x.id===slotId)
       const count=tokens.filter(t=>t.slot_id===slotId&&ACTIVE.includes(t.status)).length
-      const same=tokens.filter(t=>t.window_id===s.window_id&&t.slot?.slot_date===s.slot_date)
+      const same=tokens.filter(t=>t.window_id===s.window_id)
       const num=Math.max(0,...same.map(t=>t.token_number||0))+1
       const token={id:uid(),slot_id:s.id,window_id:s.window_id,student_id:'u-me',student_name:'You · SANS',token_number:num,queue_position:count+1,status:'booked',booked_at:new Date().toISOString(),slot:s}
       setData(d=>({...d,tokens:[...d.tokens,token]}))
@@ -200,9 +205,19 @@ export default function App(){
   }
   async function saveWindow(e){
     e.preventDefault()
-    if(live){const {error:e2}=await supabase.from('offline_windows').insert({...newWindow,status:'open'});if(e2)return notify(e2.message);await loadLive(auth.user)}
-    else setData(d=>({...d,windows:[...d.windows,{...newWindow,id:uid(),status:'open'}]}))
-    setNewWindow({name:'',work_id:works[0]?.id||'',location:'Administrative Block'});setModal('');notify('Window added.')
+    const service=works.find(w=>w.id===newWindow.work_id)
+    if(live){
+      const {data:created,error:e2}=await supabase.from('offline_windows').insert({...newWindow,status:'open'}).select('*').single()
+      if(e2)return notify(e2.message)
+      const newSlots=makeWindowSlots(created.id,service?.avg_service_minutes)
+      const {error:e3}=await supabase.from('offline_slots').insert(newSlots)
+      if(e3)return notify('Window created, but its slots could not be generated: '+e3.message)
+      await loadLive(auth.user)
+    }else{
+      const id=uid(),newSlots=makeWindowSlots(id,service?.avg_service_minutes)
+      setData(d=>({...d,windows:[...d.windows,{...newWindow,id,status:'open'}],slots:[...d.slots,...newSlots.map((slot,i)=>({...slot,id:id+'-'+slot.slot_date+'-'+i}))]}))
+    }
+    setNewWindow({name:'',work_id:works[0]?.id||'',location:'Administrative Block'});setModal('');notify('Window added with bookable slots.')
   }
   async function requestBreak(e){
     e.preventDefault()
