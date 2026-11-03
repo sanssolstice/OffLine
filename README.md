@@ -35,10 +35,10 @@ Open http://localhost:5173. Without Supabase values, the app starts in Interacti
 
 Example role assignment:
 
-    update public.profiles set role='admin' where college_id='ADMIN_COLLEGE_ID';
-    update public.profiles set role='staff' where college_id='STAFF_COLLEGE_ID';
-    update public.windows
-    set staff_id=(select id from public.profiles where college_id='STAFF_COLLEGE_ID')
+    update public.offline_profiles set role='admin' where college_id='ADMIN_COLLEGE_ID';
+    update public.offline_profiles set role='staff' where college_id='STAFF_COLLEGE_ID';
+    update public.offline_windows
+    set staff_id=(select id from public.offline_profiles where college_id='STAFF_COLLEGE_ID')
     where name='Window 01 · Student Services';
 
 The schema seeds four example campus services, four windows and weekday slots for the coming days. Slots are one hour, the final 15 minutes are reserved as buffer, and 12:00–13:00 is blocked for lunch. Capacity is derived from the service-duration estimate.
