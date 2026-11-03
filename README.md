@@ -8,7 +8,7 @@ OffLine is a role-based campus service operations platform with three separate p
 - **Student:** email/password login at `/student/login`. Students browse services, choose a window and appointment slot, book a token, track status and queue position, and cancel eligible bookings.
 - **Staff:** email/password login at `/staff/login`. Staff see their assigned service windows, view the live queue, mark arrival, call and complete students, update window availability, and request emergency breaks.
 
-Students and staff cannot register themselves. Accounts are created only by the administrator. The database auth trigger rejects signups without the server-controlled provisioning claim.
+Students and staff cannot register themselves. Accounts are created only by the administrator. The database auth trigger permits only short-lived, one-time provisioning tickets created by the server-side admin function; public signup remains disabled.
 
 ## Sample accounts
 
@@ -47,7 +47,7 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Only a pub
 2. Deploy `supabase/functions/offline-admin/index.ts` as the Edge Function named `offline-admin` with JWT verification disabled. The function verifies its own opaque, expiring admin session token and rate-limits invalid passcode attempts. It uses the server-side Supabase secret for Auth Admin and private admin tables; that secret is never exposed to the browser.
 3. Configure the one active row in `public.offline_admin_credentials` with id `primary`. Store only a SHA-256 hex digest in `passcode_hash`.
 4. Do not enable an app-level signup route. Account creation is through the admin Edge Function.
-5. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
+5. Apply the migrations in `database/migrations/` in date order. In particular, `20261103_offline_admin_provisioning_and_role_guards.sql` configures the private provisioning-ticket flow, and `20261103_retire_legacy_public_queue_system.sql` locks down the retired prototype API.\n6. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
 
 ## Scheduling rules
 
