@@ -116,12 +116,12 @@ export default function App(){
     setLoading(true);setError('')
     try{
       const [p,w,ws,sl,t,b]=await Promise.all([
-        supabase.from('profiles').select('*').eq('id',u.id).single(),
-        supabase.from('works').select('*').order('name'),
-        supabase.from('windows').select('*').order('name'),
-        supabase.from('slots').select('*').gte('slot_date',isoDay(new Date())).order('starts_at').limit(500),
-        supabase.from('tokens').select('*,slot:slots(*)').order('booked_at',{ascending:false}).limit(300),
-        supabase.from('break_requests').select('*').order('requested_at',{ascending:false}).limit(50),
+        supabase.from('offline_profiles').select('*').eq('id',u.id).single(),
+        supabase.from('offline_works').select('*').order('name'),
+        supabase.from('offline_windows').select('*').order('name'),
+        supabase.from('offline_slots').select('*').gte('slot_date',isoDay(new Date())).order('starts_at').limit(500),
+        supabase.from('offline_tokens').select('*,slot:slots(*)').order('booked_at',{ascending:false}).limit(300),
+        supabase.from('offline_break_requests').select('*').order('requested_at',{ascending:false}).limit(50),
       ])
       const failure=[p,w,ws,sl,t,b].find(x=>x.error)
       if(failure)throw failure.error
@@ -150,7 +150,7 @@ export default function App(){
     if(!slotId)return notify('Choose an available slot first.')
     if(selectedWindow?.status!=='open')return notify('This service window is unavailable.')
     if(live){
-      const {error:e}=await supabase.rpc('book_token',{p_slot_id:slotId})
+      const {error:e}=await supabase.rpc('offline_book_token',{p_slot_id:slotId})
       if(e)return notify(e.message)
       await loadLive(auth.user)
     }else{
@@ -164,12 +164,12 @@ export default function App(){
     setSlotId('');setPage('tokens');notify('Your token has been booked.')
   }
   async function cancelOwn(t){
-    if(live){const {error:e}=await supabase.rpc('cancel_own_token',{p_token_id:t.id});if(e)return notify(e.message);await loadLive(auth.user)}
+    if(live){const {error:e}=await supabase.rpc('offline_cancel_own_token',{p_token_id:t.id});if(e)return notify(e.message);await loadLive(auth.user)}
     else setData(d=>({...d,tokens:d.tokens.map(x=>x.id===t.id?{...x,status:'cancelled',cancellation_type:'student'}:x)}))
     notify('Token cancelled. Existing token numbers remain unchanged.')
   }
   async function staffAction(t,action){
-    if(live){const {error:e}=await supabase.rpc('staff_update_token',{p_token_id:t.id,p_action:action,p_reason:action==='cancel'?'Late / no-show':null});if(e)return notify(e.message);await loadLive(auth.user)}
+    if(live){const {error:e}=await supabase.rpc('offline_staff_update_token',{p_token_id:t.id,p_action:action,p_reason:action==='cancel'?'Late / no-show':null});if(e)return notify(e.message);await loadLive(auth.user)}
     else{
       const next={arrive:'arrived',start:'serving',complete:'completed',cancel:'cancelled'}[action]
       setData(d=>({...d,tokens:d.tokens.map(x=>x.id===t.id?{
@@ -183,24 +183,24 @@ export default function App(){
   }
   async function toggleWindow(w){
     const next=w.status==='open'?'closed':'open'
-    if(live){const {error:e}=await supabase.from('windows').update({status:next}).eq('id',w.id);if(e)return notify(e.message);await loadLive(auth.user)}
+    if(live){const {error:e}=await supabase.from('offline_windows').update({status:next}).eq('id',w.id);if(e)return notify(e.message);await loadLive(auth.user)}
     else setData(d=>({...d,windows:d.windows.map(x=>x.id===w.id?{...x,status:next}:x)}))
     notify('Window '+next+'.')
   }
   async function saveWork(e){
     e.preventDefault()
-    if(live){const {error:e2}=await supabase.from('works').insert({name:newWork.name,description:newWork.description,avg_service_minutes:Number(newWork.duration)});if(e2)return notify(e2.message);await loadLive(auth.user)}
+    if(live){const {error:e2}=await supabase.from('offline_works').insert({name:newWork.name,description:newWork.description,avg_service_minutes:Number(newWork.duration)});if(e2)return notify(e2.message);await loadLive(auth.user)}
     else setData(d=>({...d,works:[...d.works,{...newWork,id:uid(),avg_service_minutes:Number(newWork.duration),active:true}]}))
     setNewWork({name:'',description:'',duration:10});setModal('');notify('Service added.')
   }
   async function saveWindow(e){
     e.preventDefault()
-    if(live){const {error:e2}=await supabase.from('windows').insert({...newWindow,status:'open'});if(e2)return notify(e2.message);await loadLive(auth.user)}
+    if(live){const {error:e2}=await supabase.from('offline_windows').insert({...newWindow,status:'open'});if(e2)return notify(e2.message);await loadLive(auth.user)}
     else setData(d=>({...d,windows:[...d.windows,{...newWindow,id:uid(),status:'open'}]}))
     setNewWindow({name:'',work_id:works[0]?.id||'',location:'Administrative Block'});setModal('');notify('Window added.')
   }
   async function reviewBreak(item,status){
-    if(live){const {error:e}=await supabase.from('break_requests').update({status,reviewed_by:user.id,reviewed_at:new Date().toISOString()}).eq('id',item.id);if(e)return notify(e.message);await loadLive(auth.user)}
+    if(live){const {error:e}=await supabase.from('offline_break_requests').update({status,reviewed_by:user.id,reviewed_at:new Date().toISOString()}).eq('id',item.id);if(e)return notify(e.message);await loadLive(auth.user)}
     else{
       setData(d=>({...d,breaks:d.breaks.map(b=>b.id===item.id?{...b,status}:b),windows:status==='approved'?d.windows.map(w=>w.id===item.window_id?{...w,status:'break'}:w):d.windows}))
     }
