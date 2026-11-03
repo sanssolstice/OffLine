@@ -47,7 +47,8 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Only a pub
 2. Deploy `supabase/functions/offline-admin/index.ts` as the Edge Function named `offline-admin` with JWT verification disabled. The function verifies its own opaque, expiring admin session token and rate-limits invalid passcode attempts. It uses the server-side Supabase secret for Auth Admin and private admin tables; that secret is never exposed to the browser.
 3. Configure the one active row in `public.offline_admin_credentials` with id `primary`. Store only a SHA-256 hex digest in `passcode_hash`.
 4. Do not enable an app-level signup route. Account creation is through the admin Edge Function.
-5. Apply the migrations in `database/migrations/` in date order. In particular, `20261103_offline_admin_provisioning_and_role_guards.sql` configures the private provisioning-ticket flow, `20261103_retire_legacy_public_queue_system.sql` locks down the retired prototype API, and `20261103_finalize_offline_rls_and_remove_redundant_policies.sql` adds explicit deny policies for private/retired data and removes obsolete Auth-admin policies.\n6. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
+5. Apply the migrations in `database/migrations/` in date order. The provisioning migration configures the private one-time ticket flow; the legacy retirement migration disables the old prototype API; the final RLS migration adds explicit client-deny policies and removes unused Auth-admin policies.
+6. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
 
 ## Scheduling rules
 
@@ -55,8 +56,9 @@ Slots are one hour long, 12:00–13:00 is reserved for lunch, and the final 15 m
 
 ## Security
 
-- No public student or staff registration.
-- The admin passcode is stored as a hash and exchanged for a server-verified, expiring session; invalid attempts are rate-limited.
-- Student/staff passwords are created or reset through the admin server function.
-- Exposed OffLine tables use RLS. Admin passcode/session tables have no anon/authenticated policies.
-- Legacy `profiles`, `tokens`, and `counters` tables are kept separate and are not used by OffLine.
+- No public student or staff registration. The Auth trigger accepts only short-lived, one-time provisioning tickets created by the server-side admin function.
+- The administrator passcode is stored as a SHA-256 digest and exchanged for a server-verified, expiring session. Invalid attempts are rate-limited.
+- Student/staff passwords are created or reset through the admin Edge Function.
+- Admin passcode/session and provisioning-ticket tables have explicit deny policies for anon/authenticated roles and are accessed only by the server-side service role.
+- Retired `profiles`, `tokens`, and `counters` tables are preserved for recovery, but have no API-role grants or permissive policies. The legacy RPCs are disabled, non-mutating tombstones and cannot be executed by API roles.
+- The five exposed OffLine RPCs are limited to authenticated users, use a pinned empty search path, and enforce student/staff ownership and role checks before privileged operations.
