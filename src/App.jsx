@@ -300,7 +300,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   return <PortalFrame role="student" profile={profile} nav={nav} active={page} go={go} onSignOut={signOut}>
     {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
     {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} go={go}/>}
-    {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} tokens={tokens} slotUsage={slotUsage} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
+    {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} slotUsage={slotUsage} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
     {page==="tokens"&&<StudentTokenPage tokens={tokens} windows={windows} services={services} onCancel={cancel} go={go}/>}
     {toast&&<Toast>{toast}</Toast>}
   </PortalFrame>;
@@ -324,7 +324,7 @@ function StudentOverview({profile,services,windows,tokens,upcoming,go}) {
   </>;
 }
 
-function StudentBooking({services,windows,slots,tokens,slotUsage,selectedWork,setSelectedWork,selectedWindow,setSelectedWindow,selectedDate,setSelectedDate,selectedSlot,setSelectedSlot,onBook}) {
+function StudentBooking({services,windows,slots,slotUsage,selectedWork,setSelectedWork,selectedWindow,setSelectedWindow,selectedDate,setSelectedDate,selectedSlot,setSelectedSlot,onBook}) {
   const dates=nextDates(8);
   const work=services.find(s=>s.id===selectedWork);
   const serviceWindows=windows.filter(w=>w.work_id===selectedWork);
