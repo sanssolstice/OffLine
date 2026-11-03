@@ -109,9 +109,9 @@ create policy "slots_admin_all" on public.offline_slots for all to authenticated
 using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
 create policy "tokens_read_owner_staff_admin" on public.offline_tokens for select to authenticated
 using(student_id=(select auth.uid()) or (select public.offline_current_user_role())='admin'
-or exists(select 1 from public.offline_windows w where w.id=tokens.window_id and w.staff_id=(select auth.uid())));
+or exists(select 1 from public.offline_windows w where w.id=offline_tokens.window_id and w.staff_id=(select auth.uid())));
 create policy "events_read_authorized" on public.offline_service_events for select to authenticated
-using(exists(select 1 from public.offline_tokens t where t.id=service_events.token_id and (
+using(exists(select 1 from public.offline_tokens t where t.id=offline_service_events.token_id and (
 t.student_id=(select auth.uid()) or (select public.offline_current_user_role())='admin'
 or exists(select 1 from public.offline_windows w where w.id=t.window_id and w.staff_id=(select auth.uid())))));
 create policy "breaks_staff_insert" on public.offline_break_requests for insert to authenticated
