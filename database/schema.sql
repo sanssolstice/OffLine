@@ -342,10 +342,12 @@ cross join (values(time '09:00'),(time '10:00'),(time '11:00'),(time '13:00'),(t
 where extract(isodow from d) between 1 and 5
 on conflict(window_id,starts_at) do nothing;
 
--- Create staff/admin accounts through Auth, then promote from SQL Editor:
--- update public.offline_profiles set role='admin' where college_id='YOUR_ADMIN_COLLEGE_ID';
--- update public.offline_profiles set role='staff' where college_id='YOUR_STAFF_COLLEGE_ID';
--- update public.offline_windows set staff_id=(select id from public.offline_profiles where college_id='YOUR_STAFF_COLLEGE_ID')
--- where name='Window 01 · Student Services'-- Keep this table server-only. To configure the initial passcode, calculate SHA-256 of the passcode
--- and update the primary row with the resulting lowercase hex digest (never store the plaintext passcode).
-;
+-- Administrator access is passcode-only and does not use a public Auth account.
+-- Student/staff accounts are created and assigned roles through the offline-admin
+-- Edge Function. Do not promote profiles manually or enable public registration.
+--
+-- Keep offline_admin_credentials server-only. Store only the lowercase SHA-256
+-- digest in passcode_hash; never store the plaintext administrator passcode.
+--
+-- For an existing database that contains the retired prototype tables/functions,
+-- apply database/migrations/20261103_retire_legacy_public_queue_system.sql.
