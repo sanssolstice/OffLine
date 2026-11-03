@@ -91,8 +91,13 @@ alter table public.offline_provisioning_tickets enable row level security;
 alter table public.offline_admin_credentials enable row level security;
 alter table public.offline_admin_login_attempts enable row level security;
 alter table public.offline_admin_sessions enable row level security;
+alter table public.offline_provisioning_tickets enable row level security;
 revoke all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions,public.offline_provisioning_tickets from public,anon,authenticated;
 grant all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions,public.offline_provisioning_tickets to service_role;
+create policy server_private_deny_client_access on public.offline_admin_credentials for all to anon,authenticated using(false) with check(false);
+create policy server_private_deny_client_access on public.offline_admin_login_attempts for all to anon,authenticated using(false) with check(false);
+create policy server_private_deny_client_access on public.offline_admin_sessions for all to anon,authenticated using(false) with check(false);
+create policy server_private_deny_client_access on public.offline_provisioning_tickets for all to anon,authenticated using(false) with check(false);
 create index if not exists idx_offline_provisioning_tickets_expiry on public.offline_provisioning_tickets(expires_at);
 create index if not exists idx_offline_admin_sessions_expiry
  on public.offline_admin_sessions(expires_at) where revoked_at is null;
@@ -165,17 +170,11 @@ create policy "profiles_update_self_or_admin" on public.offline_profiles for upd
 using(id=(select auth.uid()) or (select public.offline_current_user_role())='admin')
 with check((id=(select auth.uid()) and role='student') or (select public.offline_current_user_role())='admin');
 create policy "works_read_active" on public.offline_works for select to anon,authenticated
-using(active or (select public.offline_current_user_role())='admin');
-create policy "works_admin_all" on public.offline_works for all to authenticated
-using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
+using(active);
 create policy "windows_read" on public.offline_windows for select to anon,authenticated using(true);
-create policy "windows_admin_all" on public.offline_windows for all to authenticated
-using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
 create policy "windows_staff_update_assigned" on public.offline_windows for update to authenticated
 using(staff_id=(select auth.uid())) with check(staff_id=(select auth.uid()));
 create policy "slots_read" on public.offline_slots for select to anon,authenticated using(true);
-create policy "slots_admin_all" on public.offline_slots for all to authenticated
-using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
 create policy "tokens_read_owner_staff_active" on public.offline_tokens for select to authenticated
 using(
  (select public.offline_current_user_role()) in('student','staff')
@@ -190,8 +189,6 @@ t.student_id=(select auth.uid()) or (select public.offline_current_user_role())=
 or exists(select 1 from public.offline_windows w where w.id=t.window_id and w.staff_id=(select auth.uid())))));
 create policy "breaks_staff_insert" on public.offline_break_requests for insert to authenticated
 with check(requested_by=(select auth.uid()) and (select public.offline_current_user_role())='staff' and exists(select 1 from public.offline_windows w where w.id=window_id and w.staff_id=(select auth.uid())));
-create policy "breaks_admin_read_update" on public.offline_break_requests for all to authenticated
-using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
 create policy "breaks_staff_read_own" on public.offline_break_requests for select to authenticated
 using(requested_by=(select auth.uid()) and (select public.offline_current_user_role())='staff');
 
