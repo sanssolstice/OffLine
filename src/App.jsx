@@ -60,6 +60,7 @@ export default function App(){
   const [page,setPage]=useState('overview')
   const [toast,setToast]=useState('')
   const [modal,setModal]=useState('')
+  const [forceDemo,setForceDemo]=useState(()=>new URLSearchParams(window.location.search).get('mode')==='demo')
   const [breakWindowId,setBreakWindowId]=useState('')
   const [breakReason,setBreakReason]=useState('')
   const [workId,setWorkId]=useState('w1')
@@ -76,7 +77,8 @@ export default function App(){
   const [loading,setLoading]=useState(false)
   const [error,setError]=useState('')
 
-  const live=Boolean(isLiveConfigured&&auth?.user&&profile)
+  const liveConfigured=Boolean(isLiveConfigured&&!forceDemo)
+  const live=Boolean(liveConfigured&&auth?.user&&profile)
   const user=profile||data.currentUser
   const works=data.works||[], windows=data.windows||[], slots=data.slots||[], tokens=data.tokens||[]
   const nextDays=weekdays(6)
@@ -97,7 +99,7 @@ export default function App(){
 
   useEffect(()=>{ if(!live) localStorage.setItem(STORE,JSON.stringify(data)) },[data,live])
   useEffect(()=>{
-    if(!isLiveConfigured)return
+    if(!liveConfigured)return
     let mounted=true
     const init=async()=>{
       setLoading(true)
@@ -113,7 +115,7 @@ export default function App(){
       else setProfile(null)
     })
     return()=>{mounted=false;sub.subscription.unsubscribe()}
-  },[])
+  },[liveConfigured])
   async function loadLive(u){
     setLoading(true);setError('')
     try{
@@ -238,7 +240,7 @@ export default function App(){
   const me=user?.full_name||'SANS'
   const today=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'})
 
-  if(isLiveConfigured&&!auth?.user)return <div className="auth-shell"><div className="auth-card">
+  if(liveConfigured&&!auth?.user)return <div className="auth-shell"><div className="auth-card">
     <div className="brand-mark">O<span>.</span></div><p className="eyebrow">CAMPUS SERVICES, REIMAGINED</p>
     <h1>{authMode==='signup'?'Create your account.':'Welcome back.'}</h1><p className="muted">Sign in to OffLine and keep your campus errands moving.</p>
     <form onSubmit={submitAuth} className="form-stack">
@@ -249,6 +251,7 @@ export default function App(){
       <Btn disabled={loading}>{loading?'Please wait…':authMode==='signup'?'Create account':'Sign in'} <ArrowRight size={16}/></Btn>
     </form>
     <button className="text-button" onClick={()=>setAuthMode(authMode==='signup'?'signin':'signup')}>{authMode==='signup'?'Already have an account? Sign in':'New here? Create a student account'}</button>
+    <button className="text-button" onClick={()=>setForceDemo(true)}>Open the interactive demo instead</button>
     <div className="auth-foot"><ShieldCheck size={15}/> Secure access powered by Supabase</div>
   </div></div>
 
