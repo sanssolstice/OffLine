@@ -47,11 +47,6 @@ create index if not exists idx_offline_tokens_window_status on public.offline_to
 create index if not exists idx_offline_tokens_slot_id on public.offline_tokens(slot_id);
 create index if not exists idx_offline_windows_work_id on public.offline_windows(work_id);
 create index if not exists idx_offline_windows_staff_id on public.offline_windows(staff_id);
-create index if not exists idx_offline_events_token_id on public.offline_service_events(token_id);
-create index if not exists idx_offline_events_actor_id on public.offline_service_events(actor_id);
-create index if not exists idx_offline_breaks_window_id on public.offline_break_requests(window_id);
-create index if not exists idx_offline_breaks_requested_by on public.offline_break_requests(requested_by);
-create index if not exists idx_offline_breaks_reviewed_by on public.offline_break_requests(reviewed_by);
 create table if not exists public.offline_service_events (
  id uuid primary key default gen_random_uuid(), token_id uuid not null references public.offline_tokens(id) on delete cascade,
  actor_id uuid references public.offline_profiles(id) on delete set null,
@@ -65,6 +60,11 @@ create table if not exists public.offline_break_requests (
  requested_at timestamptz not null default now(), reviewed_by uuid references public.offline_profiles(id) on delete set null,
  reviewed_at timestamptz
 );
+create index if not exists idx_offline_events_token_id on public.offline_service_events(token_id);
+create index if not exists idx_offline_events_actor_id on public.offline_service_events(actor_id);
+create index if not exists idx_offline_breaks_window_id on public.offline_break_requests(window_id);
+create index if not exists idx_offline_breaks_requested_by on public.offline_break_requests(requested_by);
+create index if not exists idx_offline_breaks_reviewed_by on public.offline_break_requests(reviewed_by);
 
 -- Definer helper avoids recursive RLS when checking a caller's role.
 create or replace function public.offline_current_user_role()
@@ -233,4 +233,6 @@ on conflict(window_id,starts_at) do nothing;
 -- update public.offline_profiles set role='admin' where college_id='YOUR_ADMIN_COLLEGE_ID';
 -- update public.offline_profiles set role='staff' where college_id='YOUR_STAFF_COLLEGE_ID';
 -- update public.offline_windows set staff_id=(select id from public.offline_profiles where college_id='YOUR_STAFF_COLLEGE_ID')
--- where name='Window 01 · Student Services';
+-- where name='Window 01 · Student Services'-- Keep this table server-only. To configure the initial passcode, calculate SHA-256 of the passcode
+-- and update the primary row with the resulting lowercase hex digest (never store the plaintext passcode).
+;
