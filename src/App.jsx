@@ -222,6 +222,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   const [windows,setWindows]=useState([]);
   const [slots,setSlots]=useState([]);
   const [tokens,setTokens]=useState([]);
+  const [slotUsage,setSlotUsage]=useState({});
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [toast,setToast]=useState("");
@@ -250,6 +251,9 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
         supabase.from("offline_tokens").select("*,slot:offline_slots(*),window:offline_windows(*)").eq("student_id",session.user.id).order("booked_at",{ascending:false}),
       ]);
       const failed=[w,ws,s,t].find(x=>x.error);if(failed?.error)throw failed.error;
+      const usage=await supabase.rpc("offline_slot_usage",{p_slot_ids:(s.data||[]).map(x=>x.id)});
+      if(usage.error)throw usage.error;
+      setSlotUsage(Object.fromEntries((usage.data||[]).map(x=>[x.slot_id,Number(x.used_count)])));
       setProfile(p);setServices(w.data||[]);setWindows(ws.data||[]);setSlots(s.data||[]);setTokens(t.data||[]);
       if(!selectedWork&&w.data?.[0])setSelectedWork(w.data[0].id);
       if(!selectedWindow&&ws.data?.[0])setSelectedWindow(ws.data[0].id);
@@ -257,11 +261,17 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
     finally{setLoading(false);}
   },[session.user.id,go,onSignedOut,selectedWork,selectedWindow]);
   useEffect(()=>{load();},[session.user.id]);
+  useEffect(()=>{
+    const channel=supabase.channel("offline-student-"+session.user.id)
+      .on("postgres_changes",{event:"*",schema:"public",table:"offline_tokens",filter:"student_id=eq."+session.user.id},()=>{load();})
+      .subscribe();
+    return()=>{supabase.removeChannel(channel);};
+  },[session.user.id,load]);
 
   const serviceWindows=windows.filter(w=>w.work_id===selectedWork);
   const currentWindow=windows.find(w=>w.id===selectedWindow);
   const options=slots.filter(s=>s.window_id===selectedWindow&&s.slot_date===selectedDate)
-    .map(s=>({...s,used:tokens.filter(t=>t.slot_id===s.id&&ACTIVE.includes(t.status)).length}))
+    .map(s=>({...s,used:slotUsage?.[s.id]||0}))
     .filter(s=>new Date(s.starts_at)>new Date()&&s.used<s.capacity)
     .sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
   const active=tokens.filter(t=>ACTIVE.includes(t.status));
@@ -286,7 +296,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   return <PortalFrame role="student" profile={profile} nav={nav} active={page} go={go} onSignOut={signOut}>
     {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
     {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} go={go}/>}
-    {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} tokens={tokens} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
+    {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} tokens={tokens} slotUsage={slotUsage} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
     {page==="tokens"&&<StudentTokenPage tokens={tokens} windows={windows} services={services} onCancel={cancel} go={go}/>}
     {toast&&<Toast>{toast}</Toast>}
   </PortalFrame>;
@@ -310,7 +320,7 @@ function StudentOverview({profile,services,windows,tokens,upcoming,go}) {
   </>;
 }
 
-function StudentBooking({services,windows,slots,tokens,selectedWork,setSelectedWork,selectedWindow,setSelectedWindow,selectedDate,setSelectedDate,selectedSlot,setSelectedSlot,onBook}) {
+function StudentBooking({services,windows,slots,tokens,slotUsage,selectedWork,setSelectedWork,selectedWindow,setSelectedWindow,selectedDate,setSelectedDate,selectedSlot,setSelectedSlot,onBook}) {
   const dates=nextDates(8);
   const work=services.find(s=>s.id===selectedWork);
   const serviceWindows=windows.filter(w=>w.work_id===selectedWork);
@@ -377,6 +387,13 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
     finally{setLoading(false);}
   },[session.user.id,go,onSignedOut,windowId]);
   useEffect(()=>{load();},[session.user.id]);
+  useEffect(()=>{
+    const channel=supabase.channel("offline-staff-"+session.user.id)
+      .on("postgres_changes",{event:"*",schema:"public",table:"offline_tokens"},()=>{load();})
+      .on("postgres_changes",{event:"*",schema:"public",table:"offline_windows",filter:"staff_id=eq."+session.user.id},()=>{load();})
+      .subscribe();
+    return()=>{supabase.removeChannel(channel);};
+  },[session.user.id,load]);
   const win=windows.find(w=>w.id===windowId);
   const queue=tokens.filter(t=>t.window_id===windowId&&ACTIVE.includes(t.status)).sort((a,b)=>{
     const rank={serving:0,arrived:1,booked:2};

@@ -22,8 +22,14 @@ async function seedDemo() {
     {role:"staff",full_name:"Arjun Malhotra",college_id:"OFF-STF-002",email:"arjun.malhotra@offline.edu"},
   ];
   const users=[];
+  const demoPasswords = {
+    "OFF-STU-001":"Aanya@OffLine26!",
+    "OFF-STU-002":"Rohan@OffLine26!",
+    "OFF-STF-001":"Meera@OffLine26!",
+    "OFF-STF-002":"Arjun@OffLine26!",
+  };
   for (const item of definitions) {
-    const password=(item.role==="staff"?"Stf!26-":"Stu!26-")+rand().slice(0,20);
+    const password=demoPasswords[item.college_id];
     const {data:existing}=await db.from("offline_profiles").select("id").eq("email",item.email).maybeSingle();
     let id="";
     if (existing?.id) {
