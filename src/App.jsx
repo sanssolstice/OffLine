@@ -60,6 +60,8 @@ export default function App(){
   const [page,setPage]=useState('overview')
   const [toast,setToast]=useState('')
   const [modal,setModal]=useState('')
+  const [breakWindowId,setBreakWindowId]=useState('')
+  const [breakReason,setBreakReason]=useState('')
   const [workId,setWorkId]=useState('w1')
   const [windowId,setWindowId]=useState('c1')
   const [day,setDay]=useState(()=>isoDay(weekdays(1)[0]))
@@ -120,14 +122,15 @@ export default function App(){
         supabase.from('offline_works').select('*').order('name'),
         supabase.from('offline_windows').select('*').order('name'),
         supabase.from('offline_slots').select('*').gte('slot_date',isoDay(new Date())).order('starts_at').limit(500),
-        supabase.from('offline_tokens').select('*,slot:slots(*)').order('booked_at',{ascending:false}).limit(300),
+        supabase.from('offline_tokens').select('*,slot:offline_slots(*)').order('booked_at',{ascending:false}).limit(300),
         supabase.from('offline_break_requests').select('*').order('requested_at',{ascending:false}).limit(50),
       ])
       const failure=[p,w,ws,sl,t,b].find(x=>x.error)
       if(failure)throw failure.error
+      const visibleWindows=p.data.role==='staff'?ws.data.filter(x=>x.staff_id===u.id):ws.data
       setProfile(p.data)
-      setData(prev=>({...prev,works:w.data,windows:ws.data,slots:sl.data,tokens:t.data.map(x=>({...x,student_name:x.student_id===u.id?'You':'Student '+x.token_number})),breaks:b.data}))
-      setRole(p.data.role);setWorkId(w.data[0]?.id||'');setWindowId(ws.data[0]?.id||'')
+      setData(prev=>({...prev,works:w.data,windows:visibleWindows,slots:sl.data,tokens:t.data.map(x=>({...x,student_name:x.student_id===u.id?'You':'Student '+x.token_number})),breaks:b.data}))
+      setRole(p.data.role);setWorkId(w.data[0]?.id||'');setWindowId(visibleWindows[0]?.id||'')
     }catch(e){setError(e.message||'Could not load your workspace.')}
     finally{setLoading(false)}
   }
@@ -199,9 +202,28 @@ export default function App(){
     else setData(d=>({...d,windows:[...d.windows,{...newWindow,id:uid(),status:'open'}]}))
     setNewWindow({name:'',work_id:works[0]?.id||'',location:'Administrative Block'});setModal('');notify('Window added.')
   }
+  async function requestBreak(e){
+    e.preventDefault()
+    if(!breakWindowId||!breakReason.trim())return notify('Select a window and enter a reason.')
+    if(live){
+      const {error:e2}=await supabase.from('offline_break_requests').insert({window_id:breakWindowId,requested_by:user.id,reason:breakReason.trim()})
+      if(e2)return notify(e2.message)
+      await loadLive(auth.user)
+    }else{
+      setData(d=>({...d,breaks:[...d.breaks,{id:uid(),window_id:breakWindowId,reason:breakReason.trim(),status:'pending',requested_by:'Staff member'}]}))
+    }
+    setBreakReason('');setModal('');notify('Emergency break request sent to Admin.')
+  }
   async function reviewBreak(item,status){
-    if(live){const {error:e}=await supabase.from('offline_break_requests').update({status,reviewed_by:user.id,reviewed_at:new Date().toISOString()}).eq('id',item.id);if(e)return notify(e.message);await loadLive(auth.user)}
-    else{
+    if(live){
+      const {error:e}=await supabase.from('offline_break_requests').update({status,reviewed_by:user.id,reviewed_at:new Date().toISOString()}).eq('id',item.id)
+      if(e)return notify(e.message)
+      if(status==='approved'){
+        const {error:e2}=await supabase.from('offline_windows').update({status:'break'}).eq('id',item.window_id)
+        if(e2)return notify(e2.message)
+      }
+      await loadLive(auth.user)
+    }else{
       setData(d=>({...d,breaks:d.breaks.map(b=>b.id===item.id?{...b,status}:b),windows:status==='approved'?d.windows.map(w=>w.id===item.window_id?{...w,status:'break'}:w):d.windows}))
     }
     notify('Break request '+status+'.')
@@ -281,17 +303,17 @@ export default function App(){
         </aside></section>}
         {page==='tokens'&&role==='student'&&<TokenList tokens={ownTokens} windows={windows} onCancel={cancelOwn} onBook={()=>setPage('book')}/>}
         {page==='queue'&&role==='staff'&&<QueuePage queue={queue} windows={windows} windowId={windowId} setWindowId={setWindowId} onAction={staffAction}/>}
-        {page==='windows'&&role==='staff'&&<WindowPage windows={windows} onToggle={toggleWindow}/>}
+        {page==='windows'&&role==='staff'&&<WindowPage windows={windows} onToggle={toggleWindow} onRequestBreak={w=>{setBreakWindowId(w.id);setBreakReason('');setModal('break')}}/>}
         {page==='services'&&role==='admin'&&<AdminServices data={data} query={query} setQuery={setQuery} onAddWork={()=>setModal('work')} onAddWindow={()=>setModal('window')} onToggle={toggleWindow} pending={pending} onReview={reviewBreak}/>}
         {page==='analytics'&&role==='admin'&&<Analytics data={data}/>}
       </div>
       <footer className="page-footer"><span>© 2026 OffLine · Built for better campus days.</span><span><i/> All systems operational</span></footer>
     </main>
 
-    {modal&&<div className="modal-backdrop" onClick={()=>setModal('')}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">ADMINISTRATION</p><h2>{modal==='work'?'Add a service':'Add a service window'}</h2></div><button className="icon-btn" onClick={()=>setModal('')}><X size={18}/></button></div>
-      <form className="form-stack" onSubmit={modal==='work'?saveWork:saveWindow}>
-        {modal==='work'?<><label>Service name<input required value={newWork.name} onChange={e=>setNewWork({...newWork,name:e.target.value})} placeholder="e.g. Library Clearance"/></label><label>Description<input value={newWork.description} onChange={e=>setNewWork({...newWork,description:e.target.value})} placeholder="What is this service for?"/></label><label>Average service time (minutes)<input type="number" min="1" max="45" value={newWork.duration} onChange={e=>setNewWork({...newWork,duration:e.target.value})}/></label></>:<><label>Window name<input required value={newWindow.name} onChange={e=>setNewWindow({...newWindow,name:e.target.value})} placeholder="e.g. Window 05 · Library"/></label><label>Service<select value={newWindow.work_id} onChange={e=>setNewWindow({...newWindow,work_id:e.target.value})}>{works.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label>Location<input value={newWindow.location} onChange={e=>setNewWindow({...newWindow,location:e.target.value})}/></label></>}
-        <div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal('')}>Cancel</Btn><Btn type="submit"><Plus size={15}/> Save changes</Btn></div>
+    {modal&&<div className="modal-backdrop" onClick={()=>setModal('')}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">{modal==='break'?'WINDOW OPERATIONS':'ADMINISTRATION'}</p><h2>{modal==='work'?'Add a service':modal==='window'?'Add a service window':'Request emergency break'}</h2></div><button className="icon-btn" onClick={()=>setModal('')}><X size={18}/></button></div>
+      <form className="form-stack" onSubmit={modal==='work'?saveWork:modal==='window'?saveWindow:requestBreak}>
+        {modal==='work'?<><label>Service name<input required value={newWork.name} onChange={e=>setNewWork({...newWork,name:e.target.value})} placeholder="e.g. Library Clearance"/></label><label>Description<input value={newWork.description} onChange={e=>setNewWork({...newWork,description:e.target.value})} placeholder="What is this service for?"/></label><label>Average service time (minutes)<input type="number" min="1" max="45" value={newWork.duration} onChange={e=>setNewWork({...newWork,duration:e.target.value})}/></label></>:modal==='window'?<><label>Window name<input required value={newWindow.name} onChange={e=>setNewWindow({...newWindow,name:e.target.value})} placeholder="e.g. Window 05 · Library"/></label><label>Service<select value={newWindow.work_id} onChange={e=>setNewWindow({...newWindow,work_id:e.target.value})}>{works.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label>Location<input value={newWindow.location} onChange={e=>setNewWindow({...newWindow,location:e.target.value})}/></label></>:<><label>Service window<select required value={breakWindowId} onChange={e=>setBreakWindowId(e.target.value)}>{windows.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label>Reason for emergency break<textarea required rows="3" maxLength="300" value={breakReason} onChange={e=>setBreakReason(e.target.value)} placeholder="Briefly explain why the window needs to pause."/></label></>}
+        <div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal('')}>Cancel</Btn><Btn type="submit"><Plus size={15}/> {modal==='break'?'Submit request':'Save changes'}</Btn></div>
       </form>
     </div></div>}
     {toast&&<div className="toast"><CheckCircle2 size={17}/>{toast}</div>}
@@ -335,7 +357,7 @@ function QueuePage({queue,windows,windowId,setWindowId,onAction}){
     {queue.length?<div>{queue.map(t=><div className="queue-row" key={t.id}><div className="queue-number">#{String(t.token_number).padStart(2,'0')}</div><div className="queue-person"><b>{t.student_name||'Student'}</b><small>{t.status==='arrived'?'Checked in · '+(t.arrived_at?time(t.arrived_at):'Just now'):t.status==='serving'?'At the counter now':'Awaiting arrival'}</small></div><Badge value={t.status}/><div className="queue-actions">{t.status==='booked'&&<Btn size="tiny" kind="soft" onClick={()=>onAction(t,'arrive')}>Mark arrived</Btn>}{t.status==='arrived'&&<Btn size="tiny" onClick={()=>onAction(t,'start')}>Call student</Btn>}{t.status==='serving'&&<Btn size="tiny" onClick={()=>onAction(t,'complete')}><Check size={13}/> Complete</Btn>}{['booked','arrived'].includes(t.status)&&<button className="cancel-link" onClick={()=>onAction(t,'cancel')}>No-show</button>}</div></div>)}</div>:<Empty icon={<Users/>} title="Queue is clear" text="New bookings will appear here automatically."/>}
   </div>
 }
-function WindowPage({windows,onToggle}){return <div className="window-grid">{windows.map(w=><div className="window-card" key={w.id}><div className="window-card-top"><Bubble><Building2/></Bubble><span className={'window-state '+w.status}>● {w.status}</span></div><h3>{w.name}</h3><p>{w.location}</p><div className="window-card-foot"><span>{w.status==='open'?'Accepting bookings':w.status==='break'?'Temporary break':'Not accepting bookings'}</span><Btn size="tiny" kind={w.status==='open'?'soft':'primary'} onClick={()=>onToggle(w)}>{w.status==='open'?'Close window':'Open window'}</Btn></div></div>)}</div>}
+function WindowPage({windows,onToggle,onRequestBreak}){return <div className="window-grid">{windows.map(w=><div className="window-card" key={w.id}><div className="window-card-top"><Bubble><Building2/></Bubble><span className={'window-state '+w.status}>● {w.status}</span></div><h3>{w.name}</h3><p>{w.location}</p><div className="window-card-foot"><span>{w.status==='open'?'Accepting bookings':w.status==='break'?'Temporary break':'Not accepting bookings'}</span><div className="window-card-actions"><Btn size="tiny" kind={w.status==='open'?'soft':'primary'} onClick={()=>onToggle(w)}>{w.status==='open'?'Close window':'Open window'}</Btn><Btn size="tiny" kind="soft" onClick={()=>onRequestBreak(w)}><Coffee size={13}/> Request break</Btn></div></div></div>)}</div>}
 function AdminHome({data,pending,onServices,onReview}){
   const total=data.tokens.length,active=data.tokens.filter(t=>ACTIVE.includes(t.status)).length,done=data.tokens.filter(t=>t.status==='completed').length
   return <><div className="metric-grid four"><Metric label="Total tokens issued" value={String(total).padStart(2,'0')} hint="All recorded bookings" icon={<Ticket/>}/><Metric label="Active queue" value={String(active).padStart(2,'0')} hint="Bookings in progress" icon={<Users/>}/><Metric label="Services completed" value={String(done).padStart(2,'0')} hint="Successfully served" icon={<CheckCircle2/>}/><Metric label="Operational windows" value={String(data.windows.filter(w=>w.status==='open').length).padStart(2,'0')} hint="Currently open" icon={<DoorOpen/>}/></div>
