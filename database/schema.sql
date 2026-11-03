@@ -82,11 +82,17 @@ create table if not exists public.offline_admin_sessions (
  expires_at timestamptz not null,
  revoked_at timestamptz
 );
+create table if not exists public.offline_provisioning_tickets (
+ email text primary key check(email=lower(email)),
+ created_at timestamptz not null default now(),
+ expires_at timestamptz not null
+);
 alter table public.offline_admin_credentials enable row level security;
 alter table public.offline_admin_login_attempts enable row level security;
 alter table public.offline_admin_sessions enable row level security;
-revoke all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions from public,anon,authenticated;
-grant all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions to service_role;
+revoke all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions,public.offline_provisioning_tickets from public,anon,authenticated;
+grant all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions,public.offline_provisioning_tickets to service_role;
+create index if not exists idx_offline_provisioning_tickets_expiry on public.offline_provisioning_tickets(expires_at);
 create index if not exists idx_offline_admin_sessions_expiry
  on public.offline_admin_sessions(expires_at) where revoked_at is null;
 create index if not exists idx_offline_tokens_student_slot_status on public.offline_tokens(student_id,slot_id,status);
@@ -107,10 +113,16 @@ grant execute on function public.offline_current_user_role() to authenticated;
 -- Ignore role fields from signup metadata: every new account is a Student.
 create or replace function public.offline_handle_new_user()
 returns trigger language plpgsql security definer set search_path=''
-as $$
+as $
+declare v_ticket_email text;
 begin
- if coalesce(new.raw_app_meta_data->>'offline_provisioned','false') <> 'true' then
-   raise exception 'Public registration is disabled. Ask your campus administrator to create your account.';
+ delete from public.offline_provisioning_tickets
+ where email=lower(coalesce(new.email,''))
+   and expires_at>now()
+ returning email into v_ticket_email;
+ if v_ticket_email is null then
+   delete from public.offline_provisioning_tickets where email=lower(coalesce(new.email,''));
+   raise exception 'Account creation is restricted. Ask your campus administrator to create your account.';
  end if;
  insert into public.offline_profiles(id,email,full_name,college_id,role)
  values(new.id,lower(new.email),
@@ -119,7 +131,7 @@ begin
  on conflict(id) do update set email=excluded.email,full_name=excluded.full_name,college_id=excluded.college_id;
  return new;
 end;
-$$;
+$;
 revoke all on function public.offline_handle_new_user() from public,anon,authenticated;
 drop trigger if exists on_auth_user_created_offline_v2 on auth.users;
 create trigger on_auth_user_created_offline_v2 after insert on auth.users
@@ -176,7 +188,7 @@ using(exists(select 1 from public.offline_tokens t where t.id=offline_service_ev
 t.student_id=(select auth.uid()) or (select public.offline_current_user_role())='admin'
 or exists(select 1 from public.offline_windows w where w.id=t.window_id and w.staff_id=(select auth.uid())))));
 create policy "breaks_staff_insert" on public.offline_break_requests for insert to authenticated
-with check(requested_by=(select auth.uid()) and exists(select 1 from public.offline_windows w where w.id=window_id and w.staff_id=(select auth.uid())));
+with check(requested_by=(select auth.uid()) and (select public.offline_current_user_role())='staff' and exists(select 1 from public.offline_windows w where w.id=window_id and w.staff_id=(select auth.uid())));
 create policy "breaks_admin_read_update" on public.offline_break_requests for all to authenticated
 using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
 create policy "breaks_staff_read_own" on public.offline_break_requests for select to authenticated
@@ -227,13 +239,14 @@ $$;
 create or replace function public.offline_slot_usage(p_slot_ids uuid[])
 returns table(slot_id uuid,used_count bigint)
 language sql stable security definer set search_path=''
-as $$
+as $
  select t.slot_id,count(*)::bigint
  from public.offline_tokens t
- where auth.uid() is not null and t.slot_id=any(p_slot_ids)
+ where (select public.offline_current_user_role())='student'
+ and t.slot_id=any(p_slot_ids)
  and t.status in('booked','arrived','serving')
  group by t.slot_id;
-$$;
+$;
 revoke all on function public.offline_slot_usage(uuid[]) from public,anon;
 grant execute on function public.offline_slot_usage(uuid[]) to authenticated;
 
@@ -242,6 +255,9 @@ returns public.offline_tokens language plpgsql security definer set search_path=
 as $$
 declare v_user uuid:=auth.uid(); v_token public.offline_tokens%rowtype; v_allowed boolean; v_next text; v_event text;
 begin
+ if v_user is null or (select public.offline_current_user_role())<>'staff' then
+   raise exception 'An active staff account is required';
+ end if;
  select * into v_token from public.offline_tokens where id=p_token_id for update;
  if not found then raise exception 'Token not found'; end if;
  select (select public.offline_current_user_role())='admin' or exists(
@@ -267,16 +283,19 @@ $$;
 
 create or replace function public.offline_cancel_own_token(p_token_id uuid)
 returns public.offline_tokens language plpgsql security definer set search_path=''
-as $$
-declare v_token public.offline_tokens%rowtype;
+as $
+declare v_user uuid:=auth.uid(); v_token public.offline_tokens%rowtype;
 begin
+ if v_user is null or (select public.offline_current_user_role())<>'student' then
+   raise exception 'An active student account is required';
+ end if;
  update public.offline_tokens set status='cancelled',cancellation_type='student'
- where id=p_token_id and student_id=auth.uid() and status in('booked','arrived') returning * into v_token;
+ where id=p_token_id and student_id=v_user and status in('booked','arrived') returning * into v_token;
  if not found then raise exception 'Token cannot be cancelled'; end if;
- insert into public.offline_service_events(token_id,actor_id,event_type) values(p_token_id,auth.uid(),'cancelled');
+ insert into public.offline_service_events(token_id,actor_id,event_type) values(p_token_id,v_user,'cancelled');
  return v_token;
 end;
-$$;
+$;
 revoke all on function public.offline_book_token(uuid) from public,anon;
 revoke all on function public.offline_staff_update_token(uuid,text,text) from public,anon;
 revoke all on function public.offline_cancel_own_token(uuid) from public,anon;
