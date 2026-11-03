@@ -47,7 +47,7 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Only a pub
 2. Deploy `supabase/functions/offline-admin/index.ts` as the Edge Function named `offline-admin` with JWT verification disabled. The function verifies its own opaque, expiring admin session token and rate-limits invalid passcode attempts. It uses the server-side Supabase secret for Auth Admin and private admin tables; that secret is never exposed to the browser.
 3. Configure the one active row in `public.offline_admin_credentials` with id `primary`. Store only a SHA-256 hex digest in `passcode_hash`.
 4. Do not enable an app-level signup route. Account creation is through the admin Edge Function.
-5. Apply the migrations in `database/migrations/` in date order. In particular, `20261103_offline_admin_provisioning_and_role_guards.sql` configures the private provisioning-ticket flow, and `20261103_retire_legacy_public_queue_system.sql` locks down the retired prototype API.\n6. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
+5. Apply the migrations in `database/migrations/` in date order. In particular, `20261103_offline_admin_provisioning_and_role_guards.sql` configures the private provisioning-ticket flow, `20261103_retire_legacy_public_queue_system.sql` locks down the retired prototype API, and `20261103_finalize_offline_rls_and_remove_redundant_policies.sql` adds explicit deny policies for private/retired data and removes obsolete Auth-admin policies.\n6. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
 
 ## Scheduling rules
 
