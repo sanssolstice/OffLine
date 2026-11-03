@@ -5,7 +5,7 @@
 create extension if not exists pgcrypto;
 create table if not exists public.offline_profiles (
  id uuid primary key references auth.users(id) on delete cascade,
- full_name text not null default 'Student', college_id text unique,
+ full_name text not null default 'Student', college_id text unique, email text unique,
  role text not null default 'student' check(role in('student','staff','admin')),
  account_status text not null default 'active' check(account_status in('active','inactive')),
  created_at timestamptz not null default now()
@@ -60,6 +60,37 @@ create table if not exists public.offline_break_requests (
  requested_at timestamptz not null default now(), reviewed_by uuid references public.offline_profiles(id) on delete set null,
  reviewed_at timestamptz
 );
+
+-- Private administrator authentication records. These tables are only accessible via the Edge Function.
+create table if not exists public.offline_admin_credentials (
+ id text primary key check(id='primary'),
+ passcode_hash text not null,
+ active boolean not null default true,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now()
+);
+create table if not exists public.offline_admin_login_attempts (
+ ip_hash text primary key,
+ attempts integer not null default 0,
+ window_started_at timestamptz not null default now(),
+ locked_until timestamptz
+);
+create table if not exists public.offline_admin_sessions (
+ id uuid primary key default gen_random_uuid(),
+ token_hash text not null unique,
+ created_at timestamptz not null default now(),
+ expires_at timestamptz not null,
+ revoked_at timestamptz
+);
+alter table public.offline_admin_credentials enable row level security;
+alter table public.offline_admin_login_attempts enable row level security;
+alter table public.offline_admin_sessions enable row level security;
+revoke all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions from public,anon,authenticated;
+grant all on public.offline_admin_credentials,public.offline_admin_login_attempts,public.offline_admin_sessions to service_role;
+create index if not exists idx_offline_admin_sessions_expiry
+ on public.offline_admin_sessions(expires_at) where revoked_at is null;
+create index if not exists idx_offline_tokens_student_slot_status on public.offline_tokens(student_id,slot_id,status);
+create unique index if not exists idx_offline_profiles_email_lower on public.offline_profiles(lower(email)) where email is not null;
 create index if not exists idx_offline_events_token_id on public.offline_service_events(token_id);
 create index if not exists idx_offline_events_actor_id on public.offline_service_events(actor_id);
 create index if not exists idx_offline_breaks_window_id on public.offline_break_requests(window_id);
@@ -78,10 +109,14 @@ create or replace function public.offline_handle_new_user()
 returns trigger language plpgsql security definer set search_path=''
 as $$
 begin
- insert into public.offline_profiles(id,full_name,college_id,role)
- values(new.id,coalesce(nullif(new.raw_user_meta_data->>'full_name',''),split_part(new.email,'@',1),'Student'),
- nullif(new.raw_user_meta_data->>'college_id',''),'student')
- on conflict(id) do nothing;
+ if coalesce(new.raw_app_meta_data->>'offline_provisioned','false') <> 'true' then
+   raise exception 'Public registration is disabled. Ask your campus administrator to create your account.';
+ end if;
+ insert into public.offline_profiles(id,email,full_name,college_id,role)
+ values(new.id,lower(new.email),
+   coalesce(nullif(new.raw_user_meta_data->>'full_name',''),split_part(new.email,'@',1),'Student'),
+   nullif(new.raw_user_meta_data->>'college_id',''),'student')
+ on conflict(id) do update set email=excluded.email,full_name=excluded.full_name,college_id=excluded.college_id;
  return new;
 end;
 $$;
@@ -98,8 +133,21 @@ alter table public.offline_tokens enable row level security;
 alter table public.offline_service_events enable row level security;
 alter table public.offline_break_requests enable row level security;
 
-create policy "profiles_select_self_or_admin" on public.offline_profiles for select to authenticated
-using(id=(select auth.uid()) or (select public.offline_current_user_role())='admin');
+create policy "offline_profiles_select_self_admin_or_assigned_staff" on public.offline_profiles for select to authenticated
+using(
+ id=(select auth.uid())
+ or (select public.offline_current_user_role())='admin'
+ or (
+   role='student'
+   and (select public.offline_current_user_role())='staff'
+   and exists(
+     select 1 from public.offline_tokens t
+     join public.offline_windows w on w.id=t.window_id
+     where t.student_id=offline_profiles.id and w.staff_id=(select auth.uid())
+       and t.status in('booked','arrived','serving','completed')
+   )
+ )
+);
 create policy "profiles_update_self_or_admin" on public.offline_profiles for update to authenticated
 using(id=(select auth.uid()) or (select public.offline_current_user_role())='admin')
 with check((id=(select auth.uid()) and role='student') or (select public.offline_current_user_role())='admin');
@@ -115,9 +163,14 @@ using(staff_id=(select auth.uid())) with check(staff_id=(select auth.uid()));
 create policy "slots_read" on public.offline_slots for select to anon,authenticated using(true);
 create policy "slots_admin_all" on public.offline_slots for all to authenticated
 using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
-create policy "tokens_read_owner_staff_admin" on public.offline_tokens for select to authenticated
-using(student_id=(select auth.uid()) or (select public.offline_current_user_role())='admin'
-or exists(select 1 from public.offline_windows w where w.id=offline_tokens.window_id and w.staff_id=(select auth.uid())));
+create policy "tokens_read_owner_staff_active" on public.offline_tokens for select to authenticated
+using(
+ (select public.offline_current_user_role()) in('student','staff')
+ and (
+   student_id=(select auth.uid())
+   or exists(select 1 from public.offline_windows w where w.id=offline_tokens.window_id and w.staff_id=(select auth.uid()))
+ )
+);
 create policy "events_read_authorized" on public.offline_service_events for select to authenticated
 using(exists(select 1 from public.offline_tokens t where t.id=offline_service_events.token_id and (
 t.student_id=(select auth.uid()) or (select public.offline_current_user_role())='admin'
@@ -126,6 +179,8 @@ create policy "breaks_staff_insert" on public.offline_break_requests for insert 
 with check(requested_by=(select auth.uid()) and exists(select 1 from public.offline_windows w where w.id=window_id and w.staff_id=(select auth.uid())));
 create policy "breaks_admin_read_update" on public.offline_break_requests for all to authenticated
 using((select public.offline_current_user_role())='admin') with check((select public.offline_current_user_role())='admin');
+create policy "breaks_staff_read_own" on public.offline_break_requests for select to authenticated
+using(requested_by=(select auth.uid()) and (select public.offline_current_user_role())='staff');
 
 grant select on public.offline_works,public.offline_windows,public.offline_slots to anon,authenticated;
 grant select,update on public.offline_profiles to authenticated;
@@ -137,27 +192,50 @@ grant insert,update,delete on public.offline_works,public.offline_windows,public
 create or replace function public.offline_book_token(p_slot_id uuid)
 returns public.offline_tokens language plpgsql security definer set search_path=''
 as $$
-declare v_user uuid:=auth.uid(); v_slot public.offline_slots%rowtype; v_win public.offline_windows%rowtype;
-v_profile public.offline_profiles%rowtype; v_num integer; v_pos integer; v_used integer; v_token public.offline_tokens%rowtype;
+declare
+ v_user uuid:=auth.uid();
+ v_slot public.offline_slots%rowtype;
+ v_win public.offline_windows%rowtype;
+ v_profile public.offline_profiles%rowtype;
+ v_num integer;
+ v_pos integer;
+ v_used integer;
+ v_token public.offline_tokens%rowtype;
 begin
  if v_user is null then raise exception 'Please sign in first'; end if;
  select * into v_profile from public.offline_profiles where id=v_user and account_status='active';
  if not found or v_profile.role<>'student' then raise exception 'An active student account is required'; end if;
  select * into v_slot from public.offline_slots where id=p_slot_id for update;
  if not found then raise exception 'Slot not found'; end if;
- select * into v_win from public.offline_windows where id=v_slot.window_id;
- if v_win.status<>'open' then raise exception 'This service window is not open'; end if;
+ select * into v_win from public.offline_windows where id=v_slot.window_id for update;
+ if not found or v_win.status<>'open' then raise exception 'This service window is not open'; end if;
  if v_slot.starts_at<=now() then raise exception 'This slot has already started'; end if;
+ if exists(
+   select 1 from public.offline_tokens
+   where student_id=v_user and slot_id=p_slot_id and status in('booked','arrived','serving')
+ ) then raise exception 'You already have an active booking for this slot'; end if;
  select count(*) into v_used from public.offline_tokens where slot_id=p_slot_id and status in('booked','arrived','serving');
  if v_used>=v_slot.capacity then raise exception 'This slot is full. Please choose another one'; end if;
- select coalesce(max(t.token_number),0)+1 into v_num from public.offline_tokens t
- where t.window_id=v_slot.window_id;
+ select coalesce(max(token_number),0)+1 into v_num from public.offline_tokens where window_id=v_slot.window_id;
  select count(*)+1 into v_pos from public.offline_tokens where slot_id=p_slot_id and status in('booked','arrived','serving');
  insert into public.offline_tokens(student_id,slot_id,window_id,token_number,queue_position)
  values(v_user,p_slot_id,v_slot.window_id,v_num,v_pos) returning * into v_token;
  return v_token;
 end;
 $$;
+
+create or replace function public.offline_slot_usage(p_slot_ids uuid[])
+returns table(slot_id uuid,used_count bigint)
+language sql stable security definer set search_path=''
+as $$
+ select t.slot_id,count(*)::bigint
+ from public.offline_tokens t
+ where auth.uid() is not null and t.slot_id=any(p_slot_ids)
+ and t.status in('booked','arrived','serving')
+ group by t.slot_id;
+$$;
+revoke all on function public.offline_slot_usage(uuid[]) from public,anon;
+grant execute on function public.offline_slot_usage(uuid[]) to authenticated;
 
 create or replace function public.offline_staff_update_token(p_token_id uuid,p_action text,p_reason text default null)
 returns public.offline_tokens language plpgsql security definer set search_path=''
@@ -203,6 +281,21 @@ revoke all on function public.offline_book_token(uuid) from public,anon;
 revoke all on function public.offline_staff_update_token(uuid,text,text) from public,anon;
 revoke all on function public.offline_cancel_own_token(uuid) from public,anon;
 grant execute on function public.offline_book_token(uuid),public.offline_staff_update_token(uuid,text,text),public.offline_cancel_own_token(uuid) to authenticated;
+
+do $$
+begin
+ if exists(select 1 from pg_publication where pubname='supabase_realtime') then
+   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='offline_tokens') then
+     alter publication supabase_realtime add table public.offline_tokens;
+   end if;
+   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='offline_windows') then
+     alter publication supabase_realtime add table public.offline_windows;
+   end if;
+   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='offline_break_requests') then
+     alter publication supabase_realtime add table public.offline_break_requests;
+   end if;
+ end if;
+end $$;
 
 insert into public.offline_works(name,description,avg_service_minutes) values
 ('Bonafide Certificate','Request and collect a bonafide certificate.',10),
