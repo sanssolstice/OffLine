@@ -168,7 +168,7 @@ function RoleLogin({role,go}) {
       const {data,error}=await supabase.auth.signInWithPassword({email:email.trim().toLowerCase(),password});
       if(error)throw error;
       const {data:profile,error:profileError}=await supabase.from("offline_profiles").select("id,full_name,role,account_status,college_id").eq("id",data.user.id).single();
-      if(profileError)throw new Error("This account has not been provisioned by your administrator.");
+      if(profileError){await supabase.auth.signOut();throw new Error("This account has not been provisioned by your administrator.");}
       if(profile.account_status!=="active"){await supabase.auth.signOut();throw new Error("Your account is inactive. Contact the campus administrator.");}
       if(profile.role!==role){await supabase.auth.signOut();throw new Error("These credentials belong to a different portal.");}
       go(role==="_staff"?"/staff/dashboard":role==="staff"?"/staff/dashboard":"/student/dashboard");
@@ -256,7 +256,11 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
       setSlotUsage(Object.fromEntries((usage.data||[]).map(x=>[x.slot_id,Number(x.used_count)])));
       setProfile(p);setServices(w.data||[]);setWindows(ws.data||[]);setSlots(s.data||[]);setTokens(t.data||[]);
       if(!selectedWork&&w.data?.[0])setSelectedWork(w.data[0].id);
-      if(!selectedWindow&&ws.data?.[0])setSelectedWindow(ws.data[0].id);
+      if(!selectedWindow){
+        const defaultWorkId=selectedWork||w.data?.[0]?.id;
+        const matchingWindow=(ws.data||[]).find(x=>x.work_id===defaultWorkId);
+        if(matchingWindow)setSelectedWindow(matchingWindow.id);
+      }
     } catch(e){setError(e.message||"Could not load student workspace.");}
     finally{setLoading(false);}
   },[session.user.id,go,onSignedOut,selectedWork,selectedWindow]);
@@ -326,7 +330,7 @@ function StudentBooking({services,windows,slots,tokens,slotUsage,selectedWork,se
   const serviceWindows=windows.filter(w=>w.work_id===selectedWork);
   const window=windows.find(w=>w.id===selectedWindow);
   const options=slots.filter(s=>s.window_id===selectedWindow&&s.slot_date===selectedDate)
-    .map(s=>({...s,used:tokens.filter(t=>t.slot_id===s.id&&ACTIVE.includes(t.status)).length}))
+    .map(s=>({...s,used:Number(slotUsage?.[s.id]||0)}))
     .filter(s=>new Date(s.starts_at)>new Date()&&s.used<s.capacity).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
   return <>
     <PageHeading eyebrow="APPOINTMENT BOOKING" title="Book a service." sub="Choose what you need. We'll take care of your place in line."/>
