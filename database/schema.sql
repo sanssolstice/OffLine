@@ -87,6 +87,7 @@ create table if not exists public.offline_provisioning_tickets (
  created_at timestamptz not null default now(),
  expires_at timestamptz not null
 );
+alter table public.offline_provisioning_tickets enable row level security;
 alter table public.offline_admin_credentials enable row level security;
 alter table public.offline_admin_login_attempts enable row level security;
 alter table public.offline_admin_sessions enable row level security;
