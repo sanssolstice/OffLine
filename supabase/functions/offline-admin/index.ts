@@ -13,11 +13,61 @@ function makeSlots(wid:string,duration:number){const rows:Record<string,unknown>
 async function isAdmin(req:Request){const raw=req.headers.get("x-admin-session")||"";if(raw.length<48)return null;const {data,error}=await db.from("offline_admin_sessions").select("id").eq("token_hash",await hash(raw)).is("revoked_at",null).gt("expires_at",new Date().toISOString()).maybeSingle();return error||!data?null:data;}
 async function createUser(b:Record<string,unknown>){const role=b.role==="staff"?"staff":"student",email=txt(b.email,200).toLowerCase(),name=txt(b.full_name,120),college=txt(b.college_id,80),password=typeof b.password==="string"?b.password:"";if(!email.includes("@")||!name||!college||password.length<10)throw new Error("Name, valid email, ID and a password of at least 10 characters are required.");const {data,error}=await db.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{full_name:name,college_id:college},app_metadata:{offline_provisioned:true,offline_role:role}});if(error||!data.user)throw new Error(error?.message||"Could not create account.");const {error:e}=await db.from("offline_profiles").upsert({id:data.user.id,email,full_name:name,college_id:college,role,account_status:"active"},{onConflict:"id"});if(e)throw new Error(e.message);return{id:data.user.id,email,full_name:name,college_id:college,role,account_status:"active",initial_password:password};}
 async function getDashboard(){const a=await Promise.all([db.from("offline_profiles").select("id,email,full_name,college_id,role,account_status,created_at").order("created_at",{ascending:false}),db.from("offline_works").select("*").order("name"),db.from("offline_windows").select("*").order("name"),db.from("offline_slots").select("*").gte("slot_date",dateIST(new Date())).order("starts_at").limit(1200),db.from("offline_tokens").select("*").order("booked_at",{ascending:false}).limit(1000),db.from("offline_break_requests").select("*").order("requested_at",{ascending:false})]);const bad=a.find(x=>x.error);if(bad?.error)throw new Error(bad.error.message);return{users:a[0].data||[],services:a[1].data||[],windows:a[2].data||[],slots:a[3].data||[],tokens:a[4].data||[],breaks:a[5].data||[]};}
+
+async function seedDemo() {
+  const definitions = [
+    {role:"student",full_name:"Aanya Sharma",college_id:"OFF-STU-001",email:"aanya.sharma@offline.edu"},
+    {role:"student",full_name:"Rohan Verma",college_id:"OFF-STU-002",email:"rohan.verma@offline.edu"},
+    {role:"staff",full_name:"Meera Kapoor",college_id:"OFF-STF-001",email:"meera.kapoor@offline.edu"},
+    {role:"staff",full_name:"Arjun Malhotra",college_id:"OFF-STF-002",email:"arjun.malhotra@offline.edu"},
+  ];
+  const users=[];
+  for (const item of definitions) {
+    const password=(item.role==="staff"?"Stf!26-":"Stu!26-")+rand().slice(0,20);
+    const {data:existing}=await db.from("offline_profiles").select("id").eq("email",item.email).maybeSingle();
+    let id="";
+    if (existing?.id) {
+      id=existing.id;
+      const {error}=await db.auth.admin.updateUserById(id,{password,app_metadata:{offline_provisioned:true,offline_role:item.role},user_metadata:{full_name:item.full_name,college_id:item.college_id}});
+      if(error)throw new Error(error.message);
+      const {error:profileError}=await db.from("offline_profiles").update({full_name:item.full_name,college_id:item.college_id,role:item.role,account_status:"active"}).eq("id",id);
+      if(profileError)throw new Error(profileError.message);
+    } else {
+      const created=await createUser({...item,password});
+      id=created.id;
+    }
+    users.push({...item,id,password,account_status:"active"});
+  }
+  const {data:windows,error:windowError}=await db.from("offline_windows").select("id,name").order("name");
+  if(windowError)throw new Error(windowError.message);
+  const w1=windows?.find(w=>w.name.includes("Window 01"))||windows?.[0];
+  const w2=windows?.find(w=>w.name.includes("Window 02"))||windows?.[1];
+  const staff1=users.find(u=>u.college_id==="OFF-STF-001"),staff2=users.find(u=>u.college_id==="OFF-STF-002");
+  if(w1&&staff1)await db.from("offline_windows").update({staff_id:staff1.id}).eq("id",w1.id);
+  if(w2&&staff2)await db.from("offline_windows").update({staff_id:staff2.id}).eq("id",w2.id);
+  const {count}=await db.from("offline_tokens").select("id",{count:"exact",head:true});
+  if((count||0)===0&&w1){
+    const {data:slots,error:slotError}=await db.from("offline_slots").select("*").eq("window_id",w1.id).gt("starts_at",new Date().toISOString()).order("starts_at").limit(3);
+    if(slotError)throw new Error(slotError.message);
+    const students=users.filter(u=>u.role==="student");
+    if(slots?.length&&students.length===2){
+      const {error}=await db.from("offline_tokens").insert([
+        {student_id:students[0].id,slot_id:slots[0].id,window_id:w1.id,token_number:1,queue_position:1,status:"arrived",arrived_at:new Date().toISOString()},
+        {student_id:students[1].id,slot_id:slots[0].id,window_id:w1.id,token_number:2,queue_position:2,status:"booked"},
+        {student_id:students[0].id,slot_id:(slots[1]||slots[0]).id,window_id:w1.id,token_number:3,queue_position:1,status:"booked"},
+      ]);
+      if(error)throw new Error(error.message);
+    }
+  }
+  return {users,message:"Sample students, staff, assignments and queue records are ready."};
+}
+
 Deno.serve(async(req:Request)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:cors});if(req.method!=="POST")return out({error:"Method not allowed"},405);let b:Record<string,unknown>;try{b=await req.json();}catch{return out({error:"Invalid request"},400);}const action=txt(b.action,60);try{
 if(action==="login"){const pass=typeof b.passcode==="string"?b.passcode.trim():"";if(!pass)return out({error:"Passcode required"},400);const ip=txt(req.headers.get("cf-connecting-ip")||req.headers.get("x-forwarded-for")||"unknown",140),ipHash=await hash("offline-admin:"+ip);const {data:attempt}=await db.from("offline_admin_login_attempts").select("*").eq("ip_hash",ipHash).maybeSingle();if(attempt?.locked_until&&new Date(attempt.locked_until).getTime()>Date.now())return out({error:"Too many attempts. Try later."},429);const {data:cred,error}=await db.from("offline_admin_credentials").select("*").eq("id","primary").maybeSingle();const valid=!error&&cred?.active&&(await hash(pass))===String(cred.passcode_hash||"");if(!valid){const now=new Date(),start=attempt?.window_started_at?new Date(attempt.window_started_at):now,fresh=now.getTime()-start.getTime()<900000,n=fresh?Number(attempt?.attempts||0)+1:1;await db.from("offline_admin_login_attempts").upsert({ip_hash:ipHash,attempts:n,window_started_at:fresh?start.toISOString():now.toISOString(),locked_until:n>=7?new Date(now.getTime()+900000).toISOString():null},{onConflict:"ip_hash"});return out({error:"Invalid admin passcode"},401);}await db.from("offline_admin_login_attempts").delete().eq("ip_hash",ipHash);const token=rand(),expiry=new Date(Date.now()+43200000).toISOString(),{error:e}=await db.from("offline_admin_sessions").insert({token_hash:await hash(token),expires_at:expiry});if(e)return out({error:e.message},500);return out({session_token:token,expires_at:expiry});}
 const s=await isAdmin(req);if(!s)return out({error:"Admin session expired. Sign in again."},401);
 if(action==="logout"){await db.from("offline_admin_sessions").update({revoked_at:new Date().toISOString()}).eq("token_hash",await hash(req.headers.get("x-admin-session")||""));return out({ok:true});}
 if(action==="dashboard")return out(await getDashboard());
+if(action==="seed_demo")return out(await seedDemo());
 if(action==="create_user")return out({user:await createUser(b)});
 if(action==="update_user"){const id=txt(b.id,80);if(!id)return out({error:"User ID required"},400);const p:Record<string,unknown>={};if(b.full_name!==undefined)p.full_name=txt(b.full_name,120);if(b.college_id!==undefined)p.college_id=txt(b.college_id,80);if(b.account_status==="active"||b.account_status==="inactive")p.account_status=b.account_status;if(b.role==="student"||b.role==="staff")p.role=b.role;const {data,error}=await db.from("offline_profiles").update(p).eq("id",id).select("*").single();if(error)return out({error:error.message},400);const {error:e}=await db.auth.admin.updateUserById(id,{app_metadata:{offline_provisioned:true,offline_role:data.role},user_metadata:{full_name:data.full_name,college_id:data.college_id}});if(e)return out({error:e.message},400);return out({user:data});}
 if(action==="reset_password"){const id=txt(b.id,80),password=typeof b.password==="string"?b.password:"";if(!id||password.length<10)return out({error:"Password must be at least 10 characters"},400);const {error}=await db.auth.admin.updateUserById(id,{password});if(error)return out({error:error.message},400);return out({ok:true});}
