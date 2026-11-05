@@ -4,9 +4,9 @@ OffLine is a role-based campus service operations platform with three separate p
 
 ## Portals
 
-- **Administrator:** passcode-only login at `/admin/login`. The administrator provisions students and staff, resets passwords, activates or deactivates accounts, assigns staff to counters, manages services and windows, reviews emergency breaks, and monitors bookings and analytics.
-- **Student:** email/password login at `/student/login`. Students browse services, choose a window and appointment slot, book a token, track status and queue position, and cancel eligible bookings.
-- **Staff:** email/password login at `/staff/login`. Staff see their assigned service windows, view the live queue, mark arrival, call and complete students, update window availability, and request emergency breaks.
+- **Administrator:** passcode-only login at `/admin/login`. The administrator provisions students and staff, resets passwords, activates or deactivates accounts, permanently deletes deactivated accounts after confirmation, assigns staff to counters, manages services and windows, reviews emergency breaks, and monitors bookings, receives operations alerts, and generates custom date-range reports.
+- **Student:** email/password login at `/student/login`. Students browse services, choose a window and one of the next two calendar days, book a token, see the live estimated turn, receive booking/queue notifications, and cancel eligible bookings.
+- **Staff:** email/password login at `/staff/login`. Staff see assigned service windows, appointment times and live estimated turns, receive booking/cancellation notifications, view the live queue, mark arrivals, call and complete students, update window availability, and request emergency breaks.
 
 Students and staff cannot register themselves. Accounts are created only by the administrator. The database auth trigger permits only short-lived, one-time provisioning tickets created by the server-side admin function; public signup remains disabled.
 
@@ -48,11 +48,13 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Only a pub
 3. Configure the one active row in `public.offline_admin_credentials` with id `primary`. Store only a SHA-256 hex digest in `passcode_hash`.
 4. Do not enable an app-level signup route. Account creation is through the admin Edge Function.
 5. Apply the migrations in `database/migrations/` in date order. The provisioning migration configures the private one-time ticket flow; the legacy retirement migration disables the old prototype API; the final RLS migration adds explicit client-deny policies and removes unused Auth-admin policies.
-6. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
+6. The live ETA RPC and notification triggers are installed by the November 5, 2026 migrations. Student/staff notification records update live in the portal; desktop browser alerts can be enabled while the portal is open.
+7. Admin reports query appointments by their scheduled slot date. Account deletion requires prior deactivation and no active bookings; token history is retained with the student identity detached.
+8. Vercel is configured for Vite and uses the SPA rewrite in `vercel.json`, so direct portal URLs work.
 
 ## Scheduling rules
 
-Slots are one hour long, 12:00–13:00 is reserved for lunch, and the final 15 minutes of each hour are a buffer. Slot capacity is derived from average service duration. Booking is validated and committed atomically in Postgres, with unique per-window token numbers.
+Only today and tomorrow are offered for booking. Students may hold one non-cancelled token per service/work per calendar day; a cancelled token releases that service/day so another slot can be chosen. A completed token still counts for that day. Slot capacity and the duplicate-work/day check are validated atomically in Postgres with a transaction-scoped advisory lock. Slots are one hour long, 12:00–13:00 is reserved for lunch, and the final 15 minutes of each hour are a buffer.
 
 ## Security
 
@@ -61,4 +63,4 @@ Slots are one hour long, 12:00–13:00 is reserved for lunch, and the final 15 m
 - Student/staff passwords are created or reset through the admin Edge Function.
 - Admin passcode/session and provisioning-ticket tables have explicit deny policies for anon/authenticated roles and are accessed only by the server-side service role.
 - Retired `profiles`, `tokens`, and `counters` tables are preserved for recovery, but have no API-role grants or permissive policies. The legacy RPCs are disabled, non-mutating tombstones and cannot be executed by API roles.
-- The five exposed OffLine RPCs are limited to authenticated users, use a pinned empty search path, and enforce student/staff ownership and role checks before privileged operations.
+- The exposed OffLine RPCs are limited to authenticated users, use a pinned empty search path, and enforce student/staff ownership and role checks before privileged operations. Notification rows are scoped to the recipient; administrator notifications are accessible only through the authenticated server-side admin function. Live ETA is calculated by a role-checked RPC.
