@@ -9,7 +9,19 @@ function rand(){return Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>
 function txt(v:unknown,n=180){return typeof v==="string"?v.trim().slice(0,n):"";}
 function dateIST(d:Date){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(d);}
 function dayIST(d:Date){return new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Kolkata",weekday:"short"}).format(d);}
-function makeSlots(wid:string,duration:number){const rows:Record<string,unknown>[]=[];let step=1,days=0;while(days<10&&step<24){const d=new Date(Date.now()+step*86400000),day=dateIST(d),wd=dayIST(d);if(wd!=="Sat"&&wd!=="Sun"){for(const h of [9,10,11,13,14,15,16]){const a=String(h).padStart(2,"0"),b=String(h+1).padStart(2,"0");rows.push({window_id:wid,slot_date:day,starts_at:new Date(day+"T"+a+":00:00+05:30").toISOString(),ends_at:new Date(day+"T"+b+":00:00+05:30").toISOString(),capacity:Math.max(1,Math.floor(45/Math.max(1,duration))),buffer_minutes:15});}days++;}step++;}return rows;}
+function makeSlots(wid:string,duration:number){
+  const rows:Record<string,unknown>[]=[];
+  for(let offset=0;offset<=1;offset++){
+    const d=new Date(Date.now()+offset*86400000),day=dateIST(d),wd=dayIST(d);
+    if(wd!=="Sat"&&wd!=="Sun"){
+      for(const h of [9,10,11,13,14,15,16]){
+        const a=String(h).padStart(2,"0"),b=String(h+1).padStart(2,"0");
+        rows.push({window_id:wid,slot_date:day,starts_at:new Date(day+"T"+a+":00:00+05:30").toISOString(),ends_at:new Date(day+"T"+b+":00:00+05:30").toISOString(),capacity:Math.max(1,Math.floor(45/Math.max(1,duration))),buffer_minutes:15});
+      }
+    }
+  }
+  return rows;
+}
 async function isAdmin(req:Request){const raw=req.headers.get("x-admin-session")||"";if(raw.length<48)return null;const {data,error}=await db.from("offline_admin_sessions").select("id").eq("token_hash",await hash(raw)).is("revoked_at",null).gt("expires_at",new Date().toISOString()).maybeSingle();return error||!data?null:data;}
 async function createUser(b:Record<string,unknown>){
   const role=b.role==="staff"?"staff":b.role==="student"?"student":"";
@@ -65,7 +77,7 @@ async function createUser(b:Record<string,unknown>){
   }
 }
 
-async function getDashboard(){const a=await Promise.all([db.from("offline_profiles").select("id,email,full_name,college_id,role,account_status,created_at").order("created_at",{ascending:false}),db.from("offline_works").select("*").order("name"),db.from("offline_windows").select("*").order("name"),db.from("offline_slots").select("*").gte("slot_date",dateIST(new Date())).order("starts_at").limit(1200),db.from("offline_tokens").select("*").order("booked_at",{ascending:false}).limit(1000),db.from("offline_break_requests").select("*").order("requested_at",{ascending:false})]);const bad=a.find(x=>x.error);if(bad?.error)throw new Error(bad.error.message);return{users:a[0].data||[],services:a[1].data||[],windows:a[2].data||[],slots:a[3].data||[],tokens:a[4].data||[],breaks:a[5].data||[]};}
+async function getDashboard(){const a=await Promise.all([db.from("offline_profiles").select("id,email,full_name,college_id,role,account_status,created_at").order("created_at",{ascending:false}),db.from("offline_works").select("*").order("name"),db.from("offline_windows").select("*").order("name"),db.from("offline_slots").select("*").gte("slot_date",dateIST(new Date())).lte("slot_date",dateIST(new Date(Date.now()+86400000))).order("starts_at").limit(1200),db.from("offline_tokens").select("*").order("booked_at",{ascending:false}).limit(1000),db.from("offline_break_requests").select("*").order("requested_at",{ascending:false})]);const bad=a.find(x=>x.error);if(bad?.error)throw new Error(bad.error.message);return{users:a[0].data||[],services:a[1].data||[],windows:a[2].data||[],slots:a[3].data||[],tokens:a[4].data||[],breaks:a[5].data||[]};}
 
 async function seedDemo() {
   const definitions = [
@@ -134,12 +146,76 @@ if(action==="login"){const pass=typeof b.passcode==="string"?b.passcode.trim():"
 const s=await isAdmin(req);if(!s)return out({error:"Admin session expired. Sign in again."},401);
 if(action==="logout"){const {error}=await db.from("offline_admin_sessions").update({revoked_at:new Date().toISOString()}).eq("token_hash",await hash(req.headers.get("x-admin-session")||""));if(error)return out({error:"Could not safely revoke the admin session. Try again."},500);return out({ok:true});}
 if(action==="dashboard")return out(await getDashboard());
+if(action==="admin_notifications"){
+  const {data,error}=await db.from("offline_admin_notifications")
+    .select("id,token_id,break_request_id,title,body,kind,created_at,read_at")
+    .order("created_at",{ascending:false}).limit(60);
+  if(error)return out({error:error.message},500);
+  return out({notifications:data||[]});
+}
+if(action==="mark_admin_notification_read"){
+  const id=txt(b.id,80);if(!id)return out({error:"Notification ID required"},400);
+  const {error}=await db.from("offline_admin_notifications")
+    .update({read_at:new Date().toISOString()}).eq("id",id).is("read_at",null);
+  if(error)return out({error:error.message},400);
+  return out({ok:true});
+}
+if(action==="mark_all_admin_notifications_read"){
+  const {error}=await db.from("offline_admin_notifications")
+    .update({read_at:new Date().toISOString()}).is("read_at",null);
+  if(error)return out({error:error.message},400);
+  return out({ok:true});
+}
+if(action==="report"){
+  const from=txt(b.from,10),to=txt(b.to,10);
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(from)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(to)||from>to)
+    return out({error:"A valid start and end date are required."},400);
+  const {data:slots,error:slotError}=await db.from("offline_slots")
+    .select("id").gte("slot_date",from).lte("slot_date",to).limit(6000);
+  if(slotError)return out({error:slotError.message},500);
+  const slotIds=(slots||[]).map((s:Record<string,unknown>)=>s.id as string);
+  if(!slotIds.length)return out({tokens:[],from,to});
+  const {data:tokens,error:tokenError}=await db.from("offline_tokens")
+    .select("*").in("slot_id",slotIds).order("booked_at",{ascending:false}).limit(5000);
+  if(tokenError)return out({error:tokenError.message},500);
+  return out({tokens:tokens||[],from,to});
+}
+if(action==="delete_user"){
+  const id=txt(b.id,80);if(!id)return out({error:"User ID required"},400);
+  const {data:profile,error:profileError}=await db.from("offline_profiles")
+    .select("id,role,account_status").eq("id",id).maybeSingle();
+  if(profileError||!profile)return out({error:profileError?.message||"Account not found."},404);
+  if(profile.account_status!=="inactive")return out({error:"Deactivate the account before deleting it."},409);
+  const {data:activeTokens,error:activeError}=await db.from("offline_tokens")
+    .select("id").eq("student_id",id).in("status",["booked","arrived","serving"]).limit(1);
+  if(activeError)return out({error:activeError.message},500);
+  if((activeTokens||[]).length)return out({error:"This account still has active bookings. Cancel or complete them before deletion."},409);
+
+  const now=new Date().toISOString();
+  const {error:tokenHistoryError}=await db.from("offline_tokens").update({student_id:null}).eq("student_id",id);
+  if(tokenHistoryError)return out({error:"Could not preserve booking history safely: "+tokenHistoryError.message},500);
+  const {error:breakPendingError}=await db.from("offline_break_requests")
+    .update({requested_by:null,status:"rejected",reviewed_at:now})
+    .eq("requested_by",id).eq("status","pending");
+  if(breakPendingError)return out({error:"Could not detach pending break requests: "+breakPendingError.message},500);
+  const {error:breakHistoryError}=await db.from("offline_break_requests")
+    .update({requested_by:null}).eq("requested_by",id);
+  if(breakHistoryError)return out({error:"Could not preserve break-request history safely: "+breakHistoryError.message},500);
+  if(profile.role==="staff"){
+    const {error:windowError}=await db.from("offline_windows")
+      .update({staff_id:null,status:"closed"}).eq("staff_id",id);
+    if(windowError)return out({error:"Could not close and unassign this staff member's windows: "+windowError.message},500);
+  }
+  const {error:deleteError}=await db.auth.admin.deleteUser(id);
+  if(deleteError)return out({error:deleteError.message},500);
+  return out({ok:true});
+}
 if(action==="seed_demo")return out(await seedDemo());
 if(action==="create_user")return out({user:await createUser(b)});
 if(action==="update_user"){const id=txt(b.id,80);if(!id)return out({error:"User ID required"},400);const p:Record<string,unknown>={};if(b.full_name!==undefined)p.full_name=txt(b.full_name,120);if(b.college_id!==undefined)p.college_id=txt(b.college_id,80);if(b.account_status==="active"||b.account_status==="inactive")p.account_status=b.account_status;if(b.role==="student"||b.role==="staff")p.role=b.role;const {data,error}=await db.from("offline_profiles").update(p).eq("id",id).select("*").single();if(error)return out({error:error.message},400);const {error:e}=await db.auth.admin.updateUserById(id,{app_metadata:{offline_provisioned:true,offline_role:data.role},user_metadata:{full_name:data.full_name,college_id:data.college_id}});if(e)return out({error:e.message},400);return out({user:data});}
 if(action==="reset_password"){const id=txt(b.id,80),password=typeof b.password==="string"?b.password:"";if(!id||password.length<10)return out({error:"Password must be at least 10 characters"},400);const {error}=await db.auth.admin.updateUserById(id,{password});if(error)return out({error:error.message},400);return out({ok:true});}
 if(action==="save_service"){const id=txt(b.id,80),name=txt(b.name,100);if(!name)return out({error:"Service name required"},400);const vals={name,description:txt(b.description,500),avg_service_minutes:Math.min(45,Math.max(1,Number(b.avg_service_minutes)||10)),active:b.active!==false};const q=id?db.from("offline_works").update(vals).eq("id",id):db.from("offline_works").insert(vals);const {data,error}=await q.select("*").single();if(error)return out({error:error.message},400);return out({service:data});}
-if(action==="save_window"){const id=txt(b.id,80),name=txt(b.name,120),work_id=txt(b.work_id,80);if(!name||!work_id)return out({error:"Window name and service required"},400);const vals={name,work_id,location:txt(b.location,160)||"Administrative Block",staff_id:txt(b.staff_id,80)||null};if(id){const {data,error}=await db.from("offline_windows").update(vals).eq("id",id).select("*").single();if(error)return out({error:error.message},400);return out({window:data});}const {data:work,error:we}=await db.from("offline_works").select("avg_service_minutes").eq("id",work_id).single();if(we)return out({error:we.message},400);const {data:win,error}=await db.from("offline_windows").insert({...vals,status:"open"}).select("*").single();if(error)return out({error:error.message},400);const rows=makeSlots(win.id,work.avg_service_minutes),{error:se}=await db.from("offline_slots").insert(rows);if(se){const {error:rollbackError}=await db.from("offline_windows").delete().eq("id",win.id);if(rollbackError)console.error("offline-admin window rollback failed",rollbackError.message);return out({error:"Window creation failed while generating appointment slots: "+se.message},500);}return out({window:win,slots_created:rows.length});}
+if(action==="save_window"){const id=txt(b.id,80),name=txt(b.name,120),work_id=txt(b.work_id,80);if(!name||!work_id)return out({error:"Window name and service required"},400);const vals={name,work_id,location:txt(b.location,160)||"Administrative Block",staff_id:txt(b.staff_id,80)||null};if(id){const {data,error}=await db.from("offline_windows").update(vals).eq("id",id).select("*").single();if(error)return out({error:error.message},400);return out({window:data});}const {data:work,error:we}=await db.from("offline_works").select("avg_service_minutes").eq("id",work_id).single();if(we)return out({error:we.message},400);const {data:win,error}=await db.from("offline_windows").insert({...vals,status:"open"}).select("*").single();if(error)return out({error:error.message},400);const rows=makeSlots(win.id,work.avg_service_minutes),{error:se}=rows.length?await db.from("offline_slots").insert(rows):{error:null};if(se){const {error:rollbackError}=await db.from("offline_windows").delete().eq("id",win.id);if(rollbackError)console.error("offline-admin window rollback failed",rollbackError.message);return out({error:"Window creation failed while generating appointment slots: "+se.message},500);}return out({window:win,slots_created:rows.length});}
 if(action==="set_window_status"){const id=txt(b.id,80),status=["open","closed","break"].includes(String(b.status))?String(b.status):"";if(!id||!status)return out({error:"Window and status required"},400);const {data,error}=await db.from("offline_windows").update({status}).eq("id",id).select("*").single();if(error)return out({error:error.message},400);return out({window:data});}
 if(action==="decide_break"){
   const id=txt(b.id,80),status=b.status==="approved"?"approved":b.status==="rejected"?"rejected":"";
