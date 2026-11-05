@@ -54,7 +54,7 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Only a pub
 
 ## Scheduling rules
 
-Only today and tomorrow are offered for booking. Students may hold one non-cancelled token per service/work per calendar day; a cancelled token releases that service/day so another slot can be chosen. A completed token still counts for that day. Slot capacity and the duplicate-work/day check are validated atomically in Postgres with a transaction-scoped advisory lock. Slots are one hour long, 12:00–13:00 is reserved for lunch, and the final 15 minutes of each hour are a buffer.
+Only today and tomorrow are offered for booking. Students may hold one non-cancelled token per service/work per calendar day; a cancelled token releases that service/day so another slot can be chosen. A completed token still counts for that day. Slot capacity is derived from the service's admin-configured average handling time: each one-hour slot reserves 15 minutes as a buffer, leaving 45 service minutes, so capacity is `max(1, floor(45 / average_service_minutes))`. The database stores this as a generated service value, applies it to newly created slots, and synchronizes future slots when a service duration or window assignment changes. Existing bookings are never removed; if a slot is already above a newly lowered capacity, it stops accepting additional bookings until cancellations bring usage below the limit. Completed appointments consume a slot spot; only cancelled appointments release one. Capacity and the duplicate-work/day check are validated atomically in Postgres with a transaction-scoped advisory lock. Slots are one hour long, 12:00–13:00 is reserved for lunch, and the final 15 minutes of each hour are a buffer.
 
 ## Security
 
