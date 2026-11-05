@@ -551,6 +551,14 @@ function AdminWorkspace({go}) {
   const [editRecord,setEditRecord]=useState(null);
   const [search,setSearch]=useState("");
   const [saving,setSaving]=useState(false);
+  const [adminNotifications,setAdminNotifications]=useState([]);
+  const [reportRange,setReportRange]=useState(()=>{
+    const to=dateKey(new Date()),fromDate=new Date();fromDate.setDate(fromDate.getDate()-29);
+    return {from:dateKey(fromDate),to};
+  });
+  const [reportTokens,setReportTokens]=useState([]);
+  const [reportLoading,setReportLoading]=useState(false);
+  const [reportError,setReportError]=useState("");
 
   const notify=(s)=>{setToast(s);window.clearTimeout(notify.timer);notify.timer=window.setTimeout(()=>setToast(""),3400);};
   async function refresh(){
@@ -575,6 +583,52 @@ function AdminWorkspace({go}) {
       .finally(()=>{if(!cancelled)setLoading(false);});
     return()=>{cancelled=true;};
   },[token]);
+
+  useEffect(()=>{
+    if(!token)return;
+    let alive=true;
+    const poll=async()=>{
+      try{
+        const result=await adminCall(token,"admin_notifications");
+        if(alive)setAdminNotifications(result.notifications||[]);
+      }catch(e){
+        if(alive&&String(e.message||"").toLowerCase().includes("session"))setError("Administrator session expired. Sign in again.");
+      }
+    };
+    poll();
+    const interval=window.setInterval(poll,15000);
+    return()=>{alive=false;window.clearInterval(interval);};
+  },[token]);
+
+  useEffect(()=>{
+    if(page!=="analytics"||!token)return;
+    if(!reportRange.from||!reportRange.to||reportRange.from>reportRange.to){
+      setReportError("Choose a valid date range. The start date must not be after the end date.");
+      setReportTokens([]);
+      return;
+    }
+    let alive=true;
+    setReportLoading(true);setReportError("");
+    adminCall(token,"report",reportRange)
+      .then(result=>{if(alive)setReportTokens(result.tokens||[]);})
+      .catch(e=>{if(alive)setReportError(e.message||"Could not load this report.");})
+      .finally(()=>{if(alive)setReportLoading(false);});
+    return()=>{alive=false;};
+  },[page,token,reportRange.from,reportRange.to]);
+
+  async function markAdminRead(id){
+    try{
+      await adminCall(token,"mark_admin_notification_read",{id});
+      setAdminNotifications(prev=>prev.map(n=>n.id===id?{...n,read_at:new Date().toISOString()}:n));
+    }catch(e){notify(e.message||"Could not mark notification as read.");}
+  }
+  async function markAllAdminRead(){
+    try{
+      await adminCall(token,"mark_all_admin_notifications_read");
+      const at=new Date().toISOString();
+      setAdminNotifications(prev=>prev.map(n=>({...n,read_at:n.read_at||at})));
+    }catch(e){notify(e.message||"Could not mark notifications as read.");}
+  }
 
   async function signOut(){
     try{await adminCall(token,"logout");}catch{}
@@ -602,6 +656,18 @@ function AdminWorkspace({go}) {
     try{await adminCall(token,"update_user",payload);await refresh();notify("Account updated.");}
     catch(e){setError(e.message||"Account update failed.");}
     finally{setSaving(false);}
+  }
+  async function deleteAccount(id){
+    setSaving(true);
+    try{
+      await adminCall(token,"delete_user",{id});
+      await refresh();
+      notify("Inactive account permanently deleted.");
+      return true;
+    }catch(e){
+      setError(e.message||"Account could not be deleted.");
+      return false;
+    }finally{setSaving(false);}
   }
   async function resetPassword(id,password){
     setSaving(true);
@@ -656,15 +722,15 @@ function AdminWorkspace({go}) {
       <nav className="side-nav">{nav.map(n=><button key={n.id} className={"side-nav-item "+(page===n.id?"active":"")} onClick={()=>setPage(n.id)}><n.icon size={18}/><span>{n.label}</span>{page===n.id&&<i/>}</button>)}</nav>
       <div className="side-bottom"><div className="side-help"><ShieldCheck size={17}/><b>Administrator authority</b><small>Create users, manage operations and oversee all campus queues.</small></div><div className="side-user"><div className="avatar">AD</div><span><b>Campus Admin</b><small>Administrator</small></span><button title="Sign out" onClick={signOut}><LogOut size={17}/></button></div></div>
     </aside>
-    <main className="portal-main"><header className="portal-topbar"><div className="portal-breadcrumb"><span>OffLine</span><ChevronRight size={14}/><b>{nav.find(n=>n.id===page)?.label||"Overview"}</b></div><div className="portal-top-actions"><span className="secure-label"><LockKeyhole size={14}/> Admin session active</span><button className="icon-button" onClick={()=>refresh()} title="Refresh data"><RefreshCw size={17}/></button><span className="role-chip admin">Administrator</span></div></header>
+    <main className="portal-main"><header className="portal-topbar"><div className="portal-breadcrumb"><span>OffLine</span><ChevronRight size={14}/><b>{nav.find(n=>n.id===page)?.label||"Overview"}</b></div><div className="portal-top-actions"><span className="secure-label"><LockKeyhole size={14}/> Admin session active</span><NotificationCenter notifications={adminNotifications} onMarkRead={markAdminRead} onMarkAllRead={markAllAdminRead}/><button className="icon-button" onClick={()=>refresh()} title="Refresh data"><RefreshCw size={17}/></button><span className="role-chip admin">Administrator</span></div></header>
       <div className="portal-content">
         {error&&<div className="inline-error"><AlertCircle size={16}/>{error}<button onClick={()=>setError("")}><X size={14}/></button></div>}
         {page==="overview"&&<AdminOverview data={data} todayTokens={todayTokens} activeTokens={activeTokens} openCount={openCount} setPage={setPage} seedDemo={seedDemo} saving={saving}/>}
-        {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onUpdate={updateUser} onReset={resetPassword} onSeed={seedDemo} saving={saving}/>}
+        {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onUpdate={updateUser} onReset={resetPassword} onDelete={deleteAccount} onSeed={seedDemo} saving={saving}/>}
         {page==="services"&&<AdminServices data={data} onAdd={()=>setModal("service")} onEdit={s=>{setModal("service");setEditRecord(s);}} onSave={saveService} saving={saving}/>}
         {page==="windows"&&<AdminWindows data={data} onAdd={()=>setModal("window")} onEdit={w=>{setModal("window");setEditRecord(w);}} onSave={saveWindow} onStatus={setWindowStatus} saving={saving}/>}
         {page==="bookings"&&<AdminBookings data={data} onReview={decideBreak} saving={saving}/>}
-        {page==="analytics"&&<AdminAnalytics data={data}/>}
+        {page==="analytics"&&<AdminAnalytics data={data} tokens={reportTokens} from={reportRange.from} to={reportRange.to} onRangeChange={(key,value)=>setReportRange(prev=>({...prev,[key]:value}))} loading={reportLoading} error={reportError}/>}
       </div>
       <footer className="portal-footer"><span>© 2026 OffLine · Administrator control centre.</span><span><i/> Database connected</span></footer>
     </main>
@@ -692,17 +758,20 @@ function AdminOverview({data,todayTokens,activeTokens,openCount,setPage,seedDemo
   </>;
 }
 
-function AdminPeople({users,search,setSearch,onCreate,onUpdate,onReset,onSeed,saving}) {
+function AdminPeople({users,search,setSearch,onCreate,onUpdate,onReset,onDelete,onSeed,saving}) {
   const [resetUser,setResetUser]=useState(null);
+  const [deleteUser,setDeleteUser]=useState(null);
+  const [deleteConfirmation,setDeleteConfirmation]=useState("");
   const [newPassword,setNewPassword]=useState("");
   return <>
     <PageHeading eyebrow="PEOPLE & ACCESS" title="People and accounts." sub="Create and manage the student and staff accounts that can access OffLine." action={<Button onClick={onCreate}><UserPlus size={16}/> Create account</Button>}/>
     {users.length===0&&<div className="seed-banner compact"><div><span><Zap/></span><div><b>No accounts have been provisioned yet.</b><p>Seed sample users for the prototype, or create your first account.</p></div></div><Button disabled={saving} onClick={onSeed}>Seed demo accounts</Button></div>}
     <div className="people-summary"><div><b>{users.filter(u=>u.role==="student").length}</b><small>Students</small></div><div><b>{users.filter(u=>u.role==="staff").length}</b><small>Staff</small></div><div><b>{users.filter(u=>u.account_status==="inactive").length}</b><small>Inactive</small></div></div>
     <Panel title="Directory" sub="All accounts issued by the administrator."><div className="table-toolbar"><div className="search-control"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name, email or ID"/></div><span className="results-count">{users.length} account(s)</span></div>
-      {users.length?<div className="table-scroll"><table className="data-table"><thead><tr><th>PERSON</th><th>COLLEGE / STAFF ID</th><th>ROLE</th><th>STATUS</th><th>CREATED</th><th>ACTIONS</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td><div className="person-cell"><div className="avatar mini">{initials(u.full_name)}</div><span><b>{u.full_name}</b><small>{u.email}</small></span></div></td><td>{u.college_id||"—"}</td><td><span className={"role-tag "+u.role}>{u.role}</span></td><td><span className={"account-state "+u.account_status}>{u.account_status}</span></td><td>{fmtDate((u.created_at||"").slice(0,10))}</td><td><div className="table-actions"><button title="Reset password" onClick={()=>{setResetUser(u);setNewPassword(makePassword(u.role==="staff"?"Stf!":"Stu!"));}}><KeyRound size={15}/></button><button title={u.account_status==="active"?"Deactivate account":"Activate account"} onClick={()=>onUpdate({id:u.id,account_status:u.account_status==="active"?"inactive":"active"})}>{u.account_status==="active"?<Ban size={15}/>:<CheckCircle2 size={15}/>}</button></div></td></tr>)}</tbody></table></div>:<EmptyState icon={<Users/>} title="No matching accounts" text="Create an account to give a student or staff member access." action={<Button size="small" onClick={onCreate}>Create account</Button>}/>}
+      {users.length?<div className="table-scroll"><table className="data-table"><thead><tr><th>PERSON</th><th>COLLEGE / STAFF ID</th><th>ROLE</th><th>STATUS</th><th>CREATED</th><th>ACTIONS</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td><div className="person-cell"><div className="avatar mini">{initials(u.full_name)}</div><span><b>{u.full_name}</b><small>{u.email}</small></span></div></td><td>{u.college_id||"—"}</td><td><span className={"role-tag "+u.role}>{u.role}</span></td><td><span className={"account-state "+u.account_status}>{u.account_status}</span></td><td>{fmtDate((u.created_at||"").slice(0,10))}</td><td><div className="table-actions"><button title="Reset password" onClick={()=>{setResetUser(u);setNewPassword(makePassword(u.role==="staff"?"Stf!":"Stu!"));}}><KeyRound size={15}/></button><button title={u.account_status==="active"?"Deactivate account":"Activate account"} onClick={()=>onUpdate({id:u.id,account_status:u.account_status==="active"?"inactive":"active"})}>{u.account_status==="active"?<Ban size={15}/>:<CheckCircle2 size={15}/>}</button>{u.account_status==="inactive"&&<button className="account-delete-action" title="Permanently delete inactive account" onClick={()=>{setDeleteUser(u);setDeleteConfirmation("");}}><Trash2 size={15}/></button>}</div></td></tr>)}</tbody></table></div>:<EmptyState icon={<Users/>} title="No matching accounts" text="Create an account to give a student or staff member access." action={<Button size="small" onClick={onCreate}>Create account</Button>}/>}
     </Panel>
     {resetUser&&<Modal title="Reset account password" eyebrow="ACCOUNT SECURITY" onClose={()=>setResetUser(null)}><form className="form-stack" onSubmit={e=>{e.preventDefault();onReset(resetUser.id,newPassword);setResetUser(null);}}><p className="muted">Set a new temporary password for <b>{resetUser.full_name}</b>. Share it with the account holder through a secure channel.</p><Field label="New password"><input required minLength="10" value={newPassword} onChange={e=>setNewPassword(e.target.value)}/></Field><div className="modal-actions"><Button type="button" variant="ghost" onClick={()=>setResetUser(null)}>Cancel</Button><Button type="submit"><Save size={15}/> Reset password</Button></div></form></Modal>}
+    {deleteUser&&<Modal title="Permanently delete account" eyebrow="IRREVERSIBLE ACCOUNT ACTION" onClose={()=>{setDeleteUser(null);setDeleteConfirmation("");}}><form className="form-stack" onSubmit={e=>{e.preventDefault();onDelete(deleteUser.id).then(ok=>{if(ok){setDeleteUser(null);setDeleteConfirmation("");}});}}><p className="muted">This account is already inactive. Deleting it permanently removes its login and profile. Historical tokens and service records are retained without identifying the account holder. Active bookings must be cleared first.</p><p><b>{deleteUser.full_name}</b><br/><small>{deleteUser.email} · {deleteUser.college_id}</small></p><Field label='Type DELETE to confirm'><input autoComplete="off" required value={deleteConfirmation} onChange={e=>setDeleteConfirmation(e.target.value)} placeholder="DELETE"/></Field><div className="modal-actions"><Button type="button" variant="ghost" onClick={()=>{setDeleteUser(null);setDeleteConfirmation("");}}>Cancel</Button><Button type="submit" disabled={saving||deleteConfirmation!=="DELETE"}><Trash2 size={15}/> Delete account</Button></div></form></Modal>}
   </>;
 }
 
@@ -732,13 +801,21 @@ function AdminBookings({data,onReview,saving}) {
   </>;
 }
 
-function AdminAnalytics({data}) {
-  const total=data.tokens.length,done=data.tokens.filter(t=>t.status==="completed").length,cancel=data.tokens.filter(t=>t.status==="cancelled").length,active=data.tokens.filter(t=>ACTIVE.includes(t.status)).length;
-  const bars=data.services.map(s=>({name:s.name,n:data.tokens.filter(t=>data.windows.some(w=>w.work_id===s.id&&w.id===t.window_id)).length}));
+function AdminAnalytics({data,tokens=[],from,to,onRangeChange,loading,error}) {
+  const total=tokens.length,done=tokens.filter(t=>t.status==="completed").length,cancel=tokens.filter(t=>t.status==="cancelled").length,active=tokens.filter(t=>ACTIVE.includes(t.status)).length;
+  const bars=data.services.map(s=>({name:s.name,n:tokens.filter(t=>data.windows.some(w=>w.work_id===s.id&&w.id===t.window_id)).length})).filter(b=>b.n>0);
   const max=Math.max(1,...bars.map(b=>b.n));
-  return <><PageHeading eyebrow="PERFORMANCE & INSIGHTS" title="Reports and analytics." sub="A real-time view of service demand and queue outcomes."/>
-    <div className="metric-grid four"><Metric label="Total bookings" value={String(total).padStart(2,"0")} hint="All recorded appointments" icon={<Ticket/>}/><Metric label="Completion rate" value={(total?Math.round(done/total*100):0)+"%"} hint={done+" completed visits"} icon={<Gauge/>} tone="blue"/><Metric label="Cancellation rate" value={(total?Math.round(cancel/total*100):0)+"%"} hint={cancel+" cancellations"} icon={<Activity/>} tone="purple"/><Metric label="Active queue" value={String(active).padStart(2,"0")} hint="Currently active tokens" icon={<Users/>} tone="orange"/></div>
-    <div className="content-grid"><Panel title="Bookings by service" sub="Distribution across the campus catalogue."><div className="chart-list">{bars.map(b=><div className="chart-row" key={b.name}><span>{b.name}</span><div className="chart-track"><i style={{width:(b.n/max*100)+"%"}}/></div><b>{b.n}</b></div>)}</div></Panel><Panel title="Queue outcomes" sub="Current token status distribution."><div className="outcome-list"><div><i className="green"/><span>Completed</span><b>{done}</b></div><div><i className="amber"/><span>Active</span><b>{active}</b></div><div><i className="red"/><span>Cancelled</span><b>{cancel}</b></div></div><div className="analytics-footnote"><ShieldCheck size={15}/> Calculated from live OffLine booking records.</div></Panel></div>
+  const invalid=!from||!to||from>to;
+  return <><PageHeading eyebrow="PERFORMANCE & INSIGHTS" title="Reports and analytics." sub="Choose an appointment-date range to review campus demand and queue outcomes."/>
+    <div className="report-range-control">
+      <label>FROM DATE<input type="date" value={from} max={to||undefined} onChange={e=>onRangeChange("from",e.target.value)}/></label>
+      <span>through</span>
+      <label>TO DATE<input type="date" value={to} min={from||undefined} onChange={e=>onRangeChange("to",e.target.value)}/></label>
+      <span>{from&&to&&!invalid?fmtDate(from)+" – "+fmtDate(to):"Select a valid date range"}</span>
+    </div>
+    {error&&<div className="inline-error"><AlertCircle size={15}/>{error}</div>}
+    <div className="metric-grid four"><Metric label="Bookings in range" value={String(total).padStart(2,"0")} hint="Scheduled appointments" icon={<Ticket/>}/><Metric label="Completion rate" value={(total?Math.round(done/total*100):0)+"%"} hint={done+" completed visits"} icon={<Gauge/>} tone="blue"/><Metric label="Cancellation rate" value={(total?Math.round(cancel/total*100):0)+"%"} hint={cancel+" cancellations"} icon={<Activity/>} tone="purple"/><Metric label="Active queue" value={String(active).padStart(2,"0")} hint="Currently active tokens" icon={<Users/>} tone="orange"/></div>
+    <div className="content-grid"><Panel title="Bookings by service" sub="Only appointments scheduled within the selected date range.">{loading?<div className="empty-state"><span>Loading report…</span></div>:bars.length?<div className="chart-list">{bars.map(b=><div className="chart-row" key={b.name}><span>{b.name}</span><div className="chart-track"><i style={{width:(b.n/max*100)+"%"}}/></div><b>{b.n}</b></div>)}</div>:<EmptyState icon={<BarChart3/>} title="No bookings in this period" text="Choose another date range to see service activity."/>}</Panel><Panel title="Queue outcomes" sub="Token status distribution for the selected period."><div className="outcome-list"><div><i className="green"/><span>Completed</span><b>{done}</b></div><div><i className="amber"/><span>Active</span><b>{active}</b></div><div><i className="red"/><span>Cancelled</span><b>{cancel}</b></div></div><div className="analytics-footnote"><ShieldCheck size={15}/> Reported for {from||"—"} to {to||"—"}.</div></Panel></div>
   </>;
 }
 
