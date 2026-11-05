@@ -334,7 +334,8 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
       .on("postgres_changes",{event:"*",schema:"public",table:"offline_queue_activity"},()=>{load();})
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"offline_profiles",filter:"id=eq."+session.user.id},()=>{load();})
       .subscribe();
-    return()=>{supabase.removeChannel(channel);};
+    const etaRefresh=window.setInterval(()=>{load();},30000);
+    return()=>{window.clearInterval(etaRefresh);supabase.removeChannel(channel);};
   },[session.user.id,load]);
 
   const serviceWindows=windows.filter(w=>w.work_id===selectedWork);
@@ -469,7 +470,8 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
       .on("postgres_changes",{event:"*",schema:"public",table:"offline_queue_activity"},()=>{load();})
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"offline_profiles",filter:"id=eq."+session.user.id},()=>{load();})
       .subscribe();
-    return()=>{supabase.removeChannel(channel);};
+    const etaRefresh=window.setInterval(()=>{load();},30000);
+    return()=>{window.clearInterval(etaRefresh);supabase.removeChannel(channel);};
   },[session.user.id,load]);
   const win=windows.find(w=>w.id===windowId);
   const queue=tokens.filter(t=>t.window_id===windowId&&ACTIVE.includes(t.status)).sort((a,b)=>{
