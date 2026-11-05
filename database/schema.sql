@@ -14,6 +14,7 @@ create table if not exists public.offline_works (
  id uuid primary key default gen_random_uuid(), name text not null unique,
  description text not null default '',
  avg_service_minutes integer not null default 10 check(avg_service_minutes between 1 and 45),
+ slot_capacity integer generated always as (greatest(1, floor(45.0 / avg_service_minutes)::integer)) stored,
  active boolean not null default true, created_at timestamptz not null default now()
 );
 create table if not exists public.offline_windows (
