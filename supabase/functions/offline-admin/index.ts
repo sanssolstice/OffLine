@@ -168,7 +168,13 @@ if(action==="mark_all_admin_notifications_read"){
 }
 if(action==="report"){
   const from=txt(b.from,10),to=txt(b.to,10);
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(from)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(to)||from>to)
+  const validDate=(v:string)=>{
+    if(v.length!==10||v[4]!=="-"||v[7]!=="-")return false;
+    for(let i=0;i<10;i++)if(i!==4&&i!==7&&(v[i]<"0"||v[i]>"9"))return false;
+    const parsed=new Date(v+"T00:00:00+05:30");
+    return !Number.isNaN(parsed.getTime())&&dateIST(parsed)===v;
+  };
+  if(!validDate(from)||!validDate(to)||from>to)
     return out({error:"A valid start and end date are required."},400);
   const {data:slots,error:slotError}=await db.from("offline_slots")
     .select("id").gte("slot_date",from).lte("slot_date",to).limit(6000);
