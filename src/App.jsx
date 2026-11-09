@@ -303,6 +303,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   const [slots,setSlots]=useState([]);
   const [tokens,setTokens]=useState([]);
   const [slotUsage,setSlotUsage]=useState({});
+  const [unavailableSlots,setUnavailableSlots]=useState({});
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [toast,setToast]=useState("");
@@ -334,9 +335,12 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
         supabase.from("offline_tokens").select("*,slot:offline_slots(*),window:offline_windows(*)").eq("student_id",session.user.id).order("booked_at",{ascending:false}),
       ]);
       const failed=[w,ws,s,t].find(x=>x.error);if(failed?.error)throw failed.error;
-      const usage=await supabase.rpc("offline_slot_usage",{p_slot_ids:(s.data||[]).map(x=>x.id)});
+      const slotIds=(s.data||[]).map(x=>x.id);
+      const [usage,unavailable]=await Promise.all([supabase.rpc("offline_slot_usage",{p_slot_ids:slotIds}),supabase.rpc("offline_unavailable_slots",{p_slot_ids:slotIds})]);
       if(usage.error)throw usage.error;
+      if(unavailable.error)throw unavailable.error;
       setSlotUsage(Object.fromEntries((usage.data||[]).map(x=>[x.slot_id,Number(x.used_count)])));
+      setUnavailableSlots(Object.fromEntries((unavailable.data||[]).map(x=>[x.slot_id,x.reopens_at])));
       const {data:etaData,error:etaError}=await supabase.rpc("offline_queue_estimates",{p_window_ids:(ws.data||[]).map(x=>x.id)});
       if(etaError)throw etaError;
       setEtas(Object.fromEntries((etaData||[]).map(x=>[x.token_id,x])));
@@ -389,7 +393,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   return <PortalFrame role="student" profile={profile} nav={nav} active={page} go={go} onSignOut={signOut} notifications={notificationState.notifications} notificationPermission={notificationState.permission} onEnableNotifications={notificationState.enable} onMarkNotificationRead={notificationState.markRead} onMarkAllNotificationsRead={notificationState.markAllRead}>
     {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
     {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} estimates={etas} go={go}/>}
-    {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} slotUsage={slotUsage} tokens={tokens} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
+    {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} slotUsage={slotUsage} unavailableSlots={unavailableSlots} tokens={tokens} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
     {page==="tokens"&&<StudentTokenPage tokens={tokens} windows={windows} services={services} estimates={etas} onCancel={cancel} go={go}/>}
     {page==="profile"&&<ProfilePage profile={profile} role="student"/>}
     {toast&&<Toast>{toast}</Toast>}
@@ -414,21 +418,21 @@ function StudentOverview({profile,services,windows,tokens,upcoming,estimates,go}
   </>;
 }
 
-function StudentBooking({services,windows,slots,slotUsage,tokens,selectedWork,setSelectedWork,selectedWindow,setSelectedWindow,selectedDate,setSelectedDate,selectedSlot,setSelectedSlot,onBook}) {
+function StudentBooking({services,windows,slots,slotUsage,unavailableSlots,tokens,selectedWork,setSelectedWork,selectedWindow,setSelectedWindow,selectedDate,setSelectedDate,selectedSlot,setSelectedSlot,onBook}) {
   const dates=nextDates();
   const work=services.find(s=>s.id===selectedWork);
   const serviceWindows=windows.filter(w=>w.work_id===selectedWork);
   const window=windows.find(w=>w.id===selectedWindow);
   const existingWorkToken=(tokens||[]).find(t=>t.status!=="cancelled"&&t.slot?.slot_date===selectedDate&&windows.find(w=>w.id===t.window_id)?.work_id===selectedWork);
   const options=slots.filter(s=>s.window_id===selectedWindow&&s.slot_date===selectedDate)
-    .map(s=>({...s,used:Number(slotUsage?.[s.id]||0)}))
-    .filter(s=>new Date(s.starts_at)>new Date()&&s.used<s.capacity).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
+    .map(s=>({...s,used:Number(slotUsage?.[s.id]||0),reopensAt:unavailableSlots?.[s.id]}))
+    .filter(s=>new Date(s.starts_at)>new Date()&&(s.used<s.capacity||s.reopensAt)).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
   return <>
     <PageHeading eyebrow="APPOINTMENT BOOKING" title="Book a service." sub="Choose what you need. We'll take care of your place in line."/>
     <div className="booking-layout"><div className="booking-main">
       <section className="step-card"><StepTitle n="01" title="What do you need done?" sub="Select the campus service you want to visit."/><div className="service-picker">{services.map((s,i)=><button key={s.id} className={"service-select "+(selectedWork===s.id?"chosen":"")} onClick={()=>{setSelectedWork(s.id);setSelectedWindow(windows.find(w=>w.work_id===s.id)?.id||"");setSelectedSlot("");}}><IconTile tone={["","blue","purple","orange"][i%4]}>{i===0?<FileText/>:i===1?<FileCheck2/>:i===2?<WalletCards/>:<ClipboardList/>}</IconTile><span><b>{s.name}</b><small>{s.description||"Campus service"} · {s.avg_service_minutes} min</small></span>{selectedWork===s.id?<CheckCircle2 className="selected-mark"/>:<ChevronRight className="subtle-icon"/>}</button>)}</div></section>
       <section className="step-card"><StepTitle n="02" title="Pick a service window" sub="Choose where you want to be served."/><div className="window-picker">{serviceWindows.map(w=><button key={w.id} className={"window-select "+(selectedWindow===w.id?"chosen":"")} onClick={()=>{setSelectedWindow(w.id);setSelectedSlot("");}}><span><b>{w.name}</b><small><Building2 size={13}/>{w.location}</small></span><span className={"window-state "+w.status}>● {w.status}</span></button>)}</div></section>
-      <section className="step-card"><StepTitle n="03" title="When works for you?" sub="Appointments are one hour. The last 15 minutes are reserved as buffer."/><div className="date-strip">{dates.map(d=><button key={dateKey(d)} className={"date-option "+(selectedDate===dateKey(d)?"chosen":"")} onClick={()=>{setSelectedDate(dateKey(d));setSelectedSlot("");}}><small>{d.toLocaleDateString("en-IN",{weekday:"short"})}</small><b>{d.getDate()}</b><small>{d.toLocaleDateString("en-IN",{month:"short"})}</small></button>)}</div><div className="slot-grid">{options.length?options.map(s=><button key={s.id} className={"slot-option "+(selectedSlot===s.id?"chosen":"")} onClick={()=>setSelectedSlot(s.id)}><b>{fmtTime(s.starts_at)}</b><small>{Math.max(0,s.capacity-s.used)} spots left</small></button>):<div className="empty-slots"><Clock3/><b>No available slots</b><span>Try another date or service window.</span></div>}</div><div className="lunch-reminder"><Coffee size={14}/> Lunch closure: 12:00 PM – 1:00 PM · No appointments during this time.</div></section>
+      <section className="step-card"><StepTitle n="03" title="When works for you?" sub="Appointments are one hour. The last 15 minutes are reserved as buffer."/><div className="date-strip">{dates.map(d=><button key={dateKey(d)} className={"date-option "+(selectedDate===dateKey(d)?"chosen":"")} onClick={()=>{setSelectedDate(dateKey(d));setSelectedSlot("");}}><small>{d.toLocaleDateString("en-IN",{weekday:"short"})}</small><b>{d.getDate()}</b><small>{d.toLocaleDateString("en-IN",{month:"short"})}</small></button>)}</div><div className="slot-grid">{options.length?options.map(s=><button key={s.id} disabled={!!s.reopensAt||s.used>=s.capacity} className={"slot-option "+(selectedSlot===s.id?"chosen":"")+(s.reopensAt?" unavailable":"")} onClick={()=>setSelectedSlot(s.id)}><b>{fmtTime(s.starts_at)}</b><small>{s.reopensAt?"Window unavailable · until "+fmtTime(s.reopensAt):Math.max(0,s.capacity-s.used)+" spots left"}</small></button>):<div className="empty-slots"><Clock3/><b>No available slots</b><span>Try another date or service window.</span></div>}</div><div className="lunch-reminder"><Coffee size={14}/> Lunch closure: 12:00 PM – 1:00 PM · No appointments during this time.</div></section>
     </div>
     <aside className="booking-summary"><p className="eyebrow">YOUR APPOINTMENT</p><h3>Almost there.</h3><p className="muted">Review your selection before confirming.</p><SummaryRow label="Service" value={work?.name||"Choose a service"}/><SummaryRow label="Service window" value={window?.name||"Choose a window"}/><SummaryRow label="Date" value={fmtDate(selectedDate)}/><SummaryRow label="Time" value={selectedSlot?fmtTime(slots.find(s=>s.id===selectedSlot)?.starts_at):"Choose a slot"}/><div className="eta-info"><Clock3 size={17}/><span><b>Live queue estimate</b><small>Your estimated turn is recalculated as the counter processes appointments.</small></span></div>{existingWorkToken&&<div className="booking-blocked"><AlertCircle size={15}/><span><b>Already booked for this service today</b><small>Cancel token #{String(existingWorkToken.token_number).padStart(2,"0")} before booking this service again on the selected date.</small></span></div>}<Button block disabled={!selectedSlot||window?.status!=="open"||!!existingWorkToken} onClick={onBook}>Confirm appointment <ArrowRight size={16}/></Button><small className="summary-privacy"><ShieldCheck size={13}/> No payment required. Cancel before service.</small></aside></div>
   </>;
@@ -604,7 +608,7 @@ function StaffInterruptionModal({windows,initialWindow,onClose,onSubmit,saving})
 function AdminWorkspace({go}) {
   const [token,setToken]=useState(()=>sessionStorage.getItem(ADMIN_SESSION_KEY)||"");
   const [page,setPage]=useState("overview");
-  const [data,setData]=useState({users:[],services:[],windows:[],slots:[],tokens:[],breaks:[]});
+  const [data,setData]=useState({users:[],services:[],windows:[],slots:[],tokens:[],breaks:[],interruptions:[]});
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [toast,setToast]=useState("");
@@ -612,6 +616,7 @@ function AdminWorkspace({go}) {
   const [createdCredentials,setCreatedCredentials]=useState([]);
   const [seedMessage,setSeedMessage]=useState("");
   const [editRecord,setEditRecord]=useState(null);
+  const [closureWindow,setClosureWindow]=useState(null);
   const [search,setSearch]=useState("");
   const [saving,setSaving]=useState(false);
   const [adminNotifications,setAdminNotifications]=useState([]);
@@ -756,6 +761,18 @@ function AdminWorkspace({go}) {
     catch(e){setError(e.message||"Could not update window.");}
     finally{setSaving(false);}
   }
+  async function scheduleWindowClosure(payload){
+    setSaving(true);
+    try{const result=await adminCall(token,"schedule_window_closure",payload);setModal("");setClosureWindow(null);await refresh();notify("Window closure scheduled. "+(result.cancelled_tokens||0)+" affected booking(s) cancelled and students notified.");}
+    catch(e){setError(e.message||"Could not schedule closure.");}
+    finally{setSaving(false);}
+  }
+  async function reviewInterruption(id,approved){
+    setSaving(true);
+    try{const result=await adminCall(token,"review_interruption",{id,approved});await refresh();notify(approved?"Leave approved. "+(result.cancelled_tokens||0)+" affected booking(s) cancelled and students notified.":"Leave request declined.");}
+    catch(e){setError(e.message||"Could not review leave request.");}
+    finally{setSaving(false);}
+  }
   async function decideBreak(id,status){
     setSaving(true);
     try{await adminCall(token,"decide_break",{id,status});await refresh();notify("Break request "+status+".");}
@@ -791,7 +808,7 @@ function AdminWorkspace({go}) {
         {page==="overview"&&<AdminOverview data={data} todayTokens={todayTokens} activeTokens={activeTokens} openCount={openCount} setPage={setPage} seedDemo={seedDemo} saving={saving}/>}
         {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onUpdate={updateUser} onReset={resetPassword} onDelete={deleteAccount} onSeed={seedDemo} saving={saving}/>}
         {page==="services"&&<AdminServices data={data} onAdd={()=>setModal("service")} onEdit={s=>{setModal("service");setEditRecord(s);}} onSave={saveService} saving={saving}/>}
-        {page==="windows"&&<AdminWindows data={data} onAdd={()=>setModal("window")} onEdit={w=>{setModal("window");setEditRecord(w);}} onSave={saveWindow} onStatus={setWindowStatus} saving={saving}/>}
+        {page==="windows"&&<AdminWindows data={data} onAdd={()=>setModal("window")} onEdit={w=>{setModal("window");setEditRecord(w);}} onSave={saveWindow} onStatus={setWindowStatus} onCloseWindow={w=>{setClosureWindow(w);setModal("closure");}} onReview={reviewInterruption} saving={saving}/>
         {page==="bookings"&&<AdminBookings data={data} onReview={decideBreak} saving={saving}/>}
         {page==="analytics"&&<AdminAnalytics data={data} tokens={reportTokens} from={reportRange.from} to={reportRange.to} onRangeChange={(key,value)=>setReportRange(prev=>({...prev,[key]:value}))} loading={reportLoading} error={reportError}/>}
       </div>
@@ -802,6 +819,7 @@ function AdminWorkspace({go}) {
     {modal==="user"&&<UserModal onClose={()=>setModal("")} onSave={saveUser} saving={saving}/>}
     {modal==="service"&&<ServiceModal initial={editRecord} onClose={()=>{setModal("");setEditRecord(null);}} onSave={saveService} saving={saving}/>}
     {modal==="window"&&<WindowModal initial={editRecord} data={data} onClose={()=>{setModal("");setEditRecord(null);}} onSave={saveWindow} saving={saving}/>}
+    {modal==="closure"&&<WindowClosureModal windows={data.windows} initialWindow={closureWindow} onClose={()=>{setModal("");setClosureWindow(null);}} onSave={scheduleWindowClosure} saving={saving}/>}
   </div>;
 }
 
@@ -847,10 +865,29 @@ function AdminServices({data,onAdd,onEdit,onSave,saving}) {
   </>;
 }
 
-function AdminWindows({data,onAdd,onEdit,onStatus,saving}) {
-  return <><PageHeading eyebrow="COUNTER CONFIGURATION" title="Service windows." sub="Create service counters, assign staff and control appointment availability." action={<Button onClick={onAdd}><Plus size={16}/> Add service window</Button>}/>
-    <div className="window-grid admin-window-grid">{data.windows.map(w=><article className="window-card" key={w.id}><div className="window-card-top"><IconTile><Building2/></IconTile><span className={"window-state "+w.status}>● {w.status}</span></div><h3>{w.name}</h3><p>{w.location}</p><div className="assigned-staff"><small>ASSIGNED STAFF</small><b>{data.users.find(u=>u.id===w.staff_id)?.full_name||"Not assigned"}</b></div><div className="window-card-metrics"><span>{data.services.find(s=>s.id===w.work_id)?.name||"Service"}</span><b>{data.slots.filter(s=>s.window_id===w.id).length} slots</b></div><div className="window-card-actions"><Button size="small" variant="outline" onClick={()=>onEdit(w)}>Edit assignment</Button><Button size="small" variant={w.status==="open"?"soft":"primary"} onClick={()=>onStatus(w.id,w.status==="open"?"closed":"open")}>{w.status==="open"?"Close window":"Open window"}</Button></div></article>)}</div>
+function AdminWindows({data,onAdd,onEdit,onStatus,onCloseWindow,onReview,saving}) {
+  const pending=(data.interruptions||[]).filter(x=>x.kind==="staff_leave"&&x.status==="pending");
+  const scheduled=(data.interruptions||[]).filter(x=>x.status==="scheduled"&&new Date(x.ends_at)>new Date()).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
+  return <><PageHeading eyebrow="COUNTER CONFIGURATION" title="Service windows." sub="Manage assignments, approve staff leave and schedule time-bound counter closures." action={<Button onClick={onAdd}><Plus size={16}/> Add service window</Button>}/>
+    {pending.length>0&&<Panel title="Staff leave awaiting approval" sub="Affected bookings are cancelled and students notified only after approval.">{pending.map(x=><div className="interruption-row" key={x.id}><span><b>{data.users.find(u=>u.id===x.created_by)?.full_name||"Staff member"} · {data.windows.find(w=>w.id===x.window_id)?.name||"Window"}</b><small>{fmtDateTime(x.starts_at)} – {fmtDateTime(x.ends_at)} · {x.reason}</small></span><div><Button size="small" disabled={saving} onClick={()=>onReview(x.id,true)}>Approve</Button><Button size="small" variant="outline" disabled={saving} onClick={()=>onReview(x.id,false)}>Decline</Button></div></div>)}</Panel>}
+    <Panel title="Scheduled breaks and closures" sub="The window reopens automatically when each unavailable period ends.">{scheduled.length?scheduled.map(x=><div className="interruption-row" key={x.id}><span><b>{data.windows.find(w=>w.id===x.window_id)?.name||"Window"} · {x.kind==="short_break"?"Short break":x.kind==="staff_leave"?"Approved leave":"Admin closure"}</b><small>{fmtDateTime(x.starts_at)} – {fmtDateTime(x.ends_at)} · Reopens {fmtDateTime(x.ends_at)} · {x.reason||"No reason supplied"}</small></span><Status value={x.status}/></div>):<EmptyState icon={<CalendarClock/>} title="No planned interruptions" text="Scheduled breaks and closures will appear here."/ >}</Panel>
+    <div className="window-grid admin-window-grid">{data.windows.map(w=><article className="window-card" key={w.id}><div className="window-card-top"><IconTile><Building2/></IconTile><span className={"window-state "+w.status}>● {w.status}</span></div><h3>{w.name}</h3><p>{w.location}</p><div className="assigned-staff"><small>ASSIGNED STAFF</small><b>{data.users.find(u=>u.id===w.staff_id)?.full_name||"Not assigned"}</b></div><div className="window-card-metrics"><span>{data.services.find(s=>s.id===w.work_id)?.name||"Service"}</span><b>{data.slots.filter(s=>s.window_id===w.id).length} slots</b></div><div className="window-card-actions"><Button size="small" variant="outline" onClick={()=>onEdit(w)}>Edit assignment</Button>{w.status==="open"?<Button size="small" variant="soft" onClick={()=>onCloseWindow(w)}>Schedule closure</Button>:<Button size="small" onClick={()=>onStatus(w.id,"open")}>Open window</Button>}</div></article>)}</div>
   </>;
+}
+
+function WindowClosureModal({windows,initialWindow,onClose,onSave,saving}) {
+  const [windowId,setWindowId]=useState(initialWindow?.id||windows[0]?.id||"");
+  const [start,setStart]=useState(()=>localDateTimeValue(Date.now()+5*60000));
+  const [end,setEnd]=useState(()=>localDateTimeValue(Date.now()+65*60000));
+  const [reason,setReason]=useState("");
+  return <Modal title="Schedule a window closure" eyebrow="ADMINISTRATOR APPROVAL" onClose={onClose}><form className="form-stack" onSubmit={e=>{e.preventDefault();onSave({window_id:windowId,starts_at:new Date(start).toISOString(),ends_at:new Date(end).toISOString(),reason});}}>
+    <Field label="Service window"><select required value={windowId} onChange={e=>setWindowId(e.target.value)}>{windows.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+    <Field label="Closure starts"><input required type="datetime-local" min={localDateTimeValue(Date.now())} value={start} onChange={e=>setStart(e.target.value)}/></Field>
+    <Field label="Expected reopening"><input required type="datetime-local" min={start} value={end} onChange={e=>setEnd(e.target.value)}/></Field>
+    <Field label="Reason for closure"><textarea rows="3" minLength="3" required value={reason} onChange={e=>setReason(e.target.value)} placeholder="For example: staff half-day leave, maintenance, campus event."/></Field>
+    <p className="muted">This is an administrator-authorized closure. Any booked or checked-in token overlapping this period will be cancelled, and only affected students plus assigned staff will be notified. The window will show its expected reopening time.</p>
+    <div className="modal-actions"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving||!windowId}>{saving?"Scheduling…":"Confirm closure"} <ArrowRight size={15}/></Button></div>
+  </form></Modal>;
 }
 
 function AdminBookings({data,onReview,saving}) {
