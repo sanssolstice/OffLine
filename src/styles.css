@@ -97,3 +97,5 @@
 .profile-detail-grid>div small{display:block;font-size:7px;letter-spacing:.8px;color:#98a397;font-weight:800;margin-bottom:5px}
 .profile-detail-grid>div b{display:block;font-size:10px;color:#3d4c3f;overflow-wrap:anywhere}
 @media(max-width:700px){.current-token-card{grid-template-columns:1fr;gap:15px}.current-token-main{border-right:0;border-bottom:1px solid #e5ece1;padding:0 0 15px}.profile-detail-grid{grid-template-columns:1fr}.interruption-row{align-items:flex-start;flex-direction:column}.interruption-row>div{width:100%}.interruption-row .btn{flex:1}}
+
+.people-heading-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
