@@ -448,7 +448,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
 
   if(loading&&!profile)return <LoadingScreen text="Opening your student portal…"/>;
   return <PortalFrame role="student" profile={profile} nav={nav} active={page} go={go} onSignOut={signOut} notifications={notificationState.notifications} notificationPermission={notificationState.permission} onEnableNotifications={notificationState.enable} onMarkNotificationRead={notificationState.markRead} onMarkAllNotificationsRead={notificationState.markAllRead}>
-    {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
+    {error&&<div className="inline-error" role="alert"><AlertCircle size={16}/><span>{error}</span><button type="button" aria-label="Dismiss message" title="Dismiss message" onClick={()=>setError("")}>Dismiss</button></div>}
     {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} estimates={etas} go={go} setSelectedWork={setSelectedWork}/>}
     {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} slotUsage={slotUsage} unavailableSlots={unavailableSlots} tokens={tokens} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
     {page==="tokens"&&<StudentTokenPage tokens={tokens} windows={windows} services={services} estimates={etas} onCancel={cancel} go={go}/>}
@@ -604,7 +604,7 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
   async function signOut(){await supabase.auth.signOut();onSignedOut();go("/");}
   if(loading&&!profile)return <LoadingScreen text="Opening your staff workspace…"/>;
   return <PortalFrame role="staff" profile={profile} nav={nav} active={page} go={go} onSignOut={signOut} notifications={notificationState.notifications} notificationPermission={notificationState.permission} onEnableNotifications={notificationState.enable} onMarkNotificationRead={notificationState.markRead} onMarkAllNotificationsRead={notificationState.markAllRead}>
-    {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
+    {error&&<div className="inline-error" role="alert"><AlertCircle size={16}/><span>{error}</span><button type="button" aria-label="Dismiss message" title="Dismiss message" onClick={()=>setError("")}>Dismiss</button></div>}
     {page==="overview"&&<StaffOverview windows={windows} win={win} windowId={windowId} setWindowId={setWindowId} queue={queue} arrived={arrived} serving={serving} tokens={tokens} etas={etas} onAction={action} go={go} onBreak={()=>setBreakModal(true)}/>}
     {page==="queue"&&<StaffQueuePage windows={windows} win={win} windowId={windowId} setWindowId={setWindowId} queue={queue} etas={etas} onAction={action} busy={busy}/>}
     {page==="windows"&&<StaffWindowPage windows={windows} interruptions={interruptions} onBreak={(id)=>{setWindowId(id);setBreakModal(true);}}/>}
@@ -704,7 +704,7 @@ function AdminWorkspace({go}) {
       }
       if(!cancelled)setData(result);
     })
-      .catch(e=>{if(!cancelled){setError(e.message||"Admin session expired.");if((e.message||"").toLowerCase().includes("session")){sessionStorage.removeItem(ADMIN_SESSION_KEY);setToken("");go("/admin/login");}}})
+      .catch(e=>{if(!cancelled){const message=friendlyErrorMessage(e,"We couldn't open the administration area. Refresh the page or sign in again.");setError(message);if(message.toLowerCase().includes("session")){sessionStorage.removeItem(ADMIN_SESSION_KEY);setToken("");go("/admin/login");}}})
       .finally(()=>{if(!cancelled)setLoading(false);});
     return()=>{cancelled=true;};
   },[token]);
@@ -736,7 +736,7 @@ function AdminWorkspace({go}) {
     setReportLoading(true);setReportError("");
     adminCall(token,"report",reportRange)
       .then(result=>{if(alive)setReportTokens(result.tokens||[]);})
-      .catch(e=>{if(alive)setReportError(e.message||"Could not load this report.");})
+      .catch(e=>{if(alive)setReportError(friendlyErrorMessage(e,"We couldn't load this report. Check the date range and try again."));})
       .finally(()=>{if(alive)setReportLoading(false);});
     return()=>{alive=false;};
   },[page,token,reportRange.from,reportRange.to]);
@@ -745,14 +745,14 @@ function AdminWorkspace({go}) {
     try{
       await adminCall(token,"mark_admin_notification_read",{id});
       setAdminNotifications(prev=>prev.map(n=>n.id===id?{...n,read_at:new Date().toISOString()}:n));
-    }catch(e){notify(e.message||"Could not mark notification as read.");}
+    }catch(e){/* Read receipts retry on the next notification refresh. */}
   }
   async function markAllAdminRead(){
     try{
       await adminCall(token,"mark_all_admin_notifications_read");
       const at=new Date().toISOString();
       setAdminNotifications(prev=>prev.map(n=>({...n,read_at:n.read_at||at})));
-    }catch(e){notify(e.message||"Could not mark notifications as read.");}
+    }catch(e){/* Read receipts retry on the next notification refresh. */}
   }
 
   async function signOut(){
@@ -861,7 +861,7 @@ function AdminWorkspace({go}) {
     </aside>
     <main className="portal-main"><header className="portal-topbar"><div className="portal-breadcrumb"><span>OffLine</span><ChevronRight size={14}/><b>{nav.find(n=>n.id===page)?.label||"Overview"}</b></div><div className="portal-top-actions"><span className="secure-label"><LockKeyhole size={14}/> Admin session active</span><NotificationCenter notifications={adminNotifications} onMarkRead={markAdminRead} onMarkAllRead={markAllAdminRead}/><button className="icon-button" onClick={()=>refresh()} title="Refresh data"><RefreshCw size={17}/></button><span className="role-chip admin">Administrator</span></div></header>
       <div className="portal-content">
-        {error&&<div className="inline-error"><AlertCircle size={16}/>{error}<button onClick={()=>setError("")}><X size={14}/></button></div>}
+        {error&&<div className="inline-error" role="alert"><AlertCircle size={16}/><span>{error}</span><button type="button" aria-label="Dismiss message" title="Dismiss message" onClick={()=>setError("")}>Dismiss</button></div>}
         {page==="overview"&&<AdminOverview data={data} todayTokens={todayTokens} activeTokens={activeTokens} openCount={openCount} setPage={setPage} seedDemo={seedDemo} saving={saving}/>}
         {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onUpdate={updateUser} onReset={resetPassword} onDelete={deleteAccount} onSeed={seedDemo} saving={saving}/>}
         {page==="services"&&<AdminServices data={data} onAdd={()=>setModal("service")} onEdit={s=>{setModal("service");setEditRecord(s);}} onSave={saveService} saving={saving}/>}
