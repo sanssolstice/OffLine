@@ -196,12 +196,12 @@ function AdminLogin({go}) {
     e.preventDefault();setBusy(true);setError("");
     try {
       const {data,error}=await supabase.functions.invoke("offline-admin",{body:{action:"login",passcode}});
-      if(error)throw new Error(error.message||"Admin login failed.");
-      if(data?.error)throw new Error(data.error);
+      if(error){const detail=await edgeFunctionErrorDetail(error);throw new Error(friendlyErrorMessage(detail||error.message,"We couldn't verify the administrator passcode. Please try again."));}
+      if(data?.error)throw new Error(friendlyErrorMessage(data.error,"We couldn't verify the administrator passcode. Please try again."));
       if(!data?.session_token)throw new Error("The server did not issue an admin session.");
       sessionStorage.setItem(ADMIN_SESSION_KEY,data.session_token);
       go("/admin/dashboard");
-    } catch(err){setError(err.message||"Unable to sign in.");}
+    } catch(err){setError(friendlyErrorMessage(err,"We couldn't sign you in. Please check your details and try again."));}
     finally{setBusy(false);}
   }
   return <AuthShell go={go} role="admin" title="Administrator access" subtitle="Enter the passcode issued physically by your campus." onSubmit={submit} busy={busy} error={error}>
@@ -227,7 +227,7 @@ function RoleLogin({role,go}) {
       if(profile.account_status!=="active"){await supabase.auth.signOut();throw new Error("Your account is inactive. Contact the campus administrator.");}
       if(profile.role!==role){await supabase.auth.signOut();throw new Error("These credentials belong to a different portal.");}
       go(role==="_staff"?"/staff/dashboard":role==="staff"?"/staff/dashboard":"/student/dashboard");
-    } catch(err){setError(err.message||"Sign in failed.");}
+    } catch(err){setError(friendlyErrorMessage(err,"We couldn't sign you in. Please check your details and try again."));}
     finally{setBusy(false);}
   }
   return <AuthShell go={go} role={role} title={title} subtitle={role==="student"?"Sign in with the credentials provided by your campus.":"Use your staff account issued by the administrator."} onSubmit={submit} busy={busy} error={error}>
@@ -408,7 +408,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
         const matchingWindow=(ws.data||[]).find(x=>x.work_id===defaultWorkId);
         if(matchingWindow)setSelectedWindow(matchingWindow.id);
       }
-    } catch(e){setError(e.message||"Could not load student workspace.");}
+    } catch(e){setError(friendlyErrorMessage(e,"We couldn't load your campus portal. Refresh the page and try again."));}
     finally{setLoading(false);}
   },[session.user.id,go,onSignedOut,selectedWork,selectedWindow]);
   useEffect(()=>{load();},[session.user.id]);
@@ -436,12 +436,12 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
     if(!selectedSlot)return notify("Choose an available appointment first.");
     if(currentWindow?.status!=="open")return notify("This service window is not accepting bookings.");
     const {error:e}=await supabase.rpc("offline_book_token",{p_slot_id:selectedSlot});
-    if(e)return notify(e.message);
+    if(e){setError(friendlyErrorMessage(e,"We couldn't book that appointment. Please choose another time and try again."));return;}
     setSelectedSlot("");await load();go("/student/tokens");notify("Your token has been booked.");
   }
   async function cancel(token){
     const {error:e}=await supabase.rpc("offline_cancel_own_token",{p_token_id:token.id});
-    if(e)return notify(e.message);
+    if(e){setError(friendlyErrorMessage(e,"We couldn't cancel that appointment. Please try again."));return;}
     await load();notify("Token cancelled successfully.");
   }
   async function signOut(){await supabase.auth.signOut();onSignedOut();go("/");}
@@ -449,7 +449,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   if(loading&&!profile)return <LoadingScreen text="Opening your student portal…"/>;
   return <PortalFrame role="student" profile={profile} nav={nav} active={page} go={go} onSignOut={signOut} notifications={notificationState.notifications} notificationPermission={notificationState.permission} onEnableNotifications={notificationState.enable} onMarkNotificationRead={notificationState.markRead} onMarkAllNotificationsRead={notificationState.markAllRead}>
     {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
-    {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} estimates={etas} go={go}/>}
+    {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} estimates={etas} go={go} setSelectedWork={setSelectedWork}/>}
     {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} slotUsage={slotUsage} unavailableSlots={unavailableSlots} tokens={tokens} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
     {page==="tokens"&&<StudentTokenPage tokens={tokens} windows={windows} services={services} estimates={etas} onCancel={cancel} go={go}/>}
     {page==="profile"&&<ProfilePage profile={profile} role="student"/>}
@@ -457,7 +457,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   </PortalFrame>;
 }
 
-function StudentOverview({profile,services,windows,tokens,upcoming,estimates,go}) {
+function StudentOverview({profile,services,windows,tokens,upcoming,estimates,go,setSelectedWork}) {
   const active=tokens.filter(t=>ACTIVE.includes(t.status)).length;
   const completed=tokens.filter(t=>t.status==="completed").length;
   return <>
@@ -469,7 +469,7 @@ function StudentOverview({profile,services,windows,tokens,upcoming,estimates,go}
         {upcoming?<div className="next-token-card"><div className="next-token-number"><small>YOUR TOKEN</small><strong>#{String(upcoming.token_number).padStart(2,"0")}</strong><Status value={upcoming.status}/></div><div className="next-token-detail"><span><small>Service window</small><b>{windows.find(w=>w.id===upcoming.window_id)?.name||"Campus counter"}</b></span><span><small>Appointment</small><b>{fmtDateTime(upcoming.slot?.starts_at||upcoming.booked_at)}</b></span><span><small>Queue position</small><b>{estimates?.[upcoming.id]?.queue_position??upcoming.queue_position??"—"}</b></span><span><small>Estimated turn</small><b>{fmtDateTime(estimates?.[upcoming.id]?.estimated_at)}</b></span></div></div>:<EmptyState icon={<Ticket/>} title="No upcoming tokens" text="Book a service and your appointment will appear here." action={<Button size="small" onClick={()=>go("/student/book")}>Book a token</Button>}/>}
       </Panel>
       <Panel title="Popular campus services" sub="Get started with a campus essential.">
-        <div className="shortcut-list">{services.slice(0,5).map((s,i)=><div className="shortcut-row" key={s.id}><IconTile tone={i%2?"blue":""}>{i===0?<FileText/>:i===1?<FileCheck2/>:i===2?<WalletCards/>:<ClipboardList/>}</IconTile><span><b>{s.name}</b><small>{s.avg_service_minutes} min · Average service time</small></span><ChevronRight size={17}/></div>)}</div>
+        <div className="shortcut-list">{services.slice(0,5).map((s,i)=><button type="button" className="shortcut-row" key={s.id} onClick={()=>{setSelectedWork(s.id);go("/student/book");}}><IconTile tone={i%2?"blue":""}>{i===0?<FileText/>:i===1?<FileCheck2/>:i===2?<WalletCards/>:<ClipboardList/>}</IconTile><span><b>{s.name}</b><small>{s.avg_service_minutes} min · Average service time</small></span><ChevronRight size={17}/></button>)}</div>
       </Panel>
     </div>
   </>;
@@ -553,7 +553,7 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
       setEtas(Object.fromEntries((etaResult.data||[]).map(x=>[x.token_id,x])));
       setTokens((t.data||[]).filter(x=>assignedIds.includes(x.window_id)).map(x=>({...x,student_name:x.student?.full_name||"Student",student_college_id:x.student?.college_id||""})));
       if(!windowId&&w.data?.[0])setWindowId(w.data[0].id);
-    }catch(e){setError(e.message||"Could not load staff workspace.");}
+    }catch(e){setError(friendlyErrorMessage(e,"We couldn't load your staff workspace. Refresh the page and try again."));}
     finally{setLoading(false);}
   },[session.user.id,go,onSignedOut,windowId]);
   useEffect(()=>{load();},[session.user.id]);
@@ -581,7 +581,7 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
       const {error}=await supabase.rpc("offline_staff_update_token",{p_token_id:token.id,p_action:act,p_reason:act==="cancel"?"Late / no-show":null});
       if(error)throw error;
       await load();notify(({arrive:"Arrival recorded.",start:"Student called to the counter.",complete:"Service completed.",cancel:"Token marked as no-show."})[act]);
-    }catch(e){notify(e.message||"Action failed.");}
+    }catch(e){setError(friendlyErrorMessage(e,"We couldn't update this token. Please try again."));}
     finally{setBusy(false);}
   }
   async function scheduleInterruption(payload){
@@ -598,7 +598,7 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
       notify(payload.kind==="short_break"
         ? "Short break scheduled. "+(result?.cancelled_tokens||0)+" affected booking(s) cancelled and students notified."
         : "Leave request submitted for administrator approval.");
-    }catch(e){notify(e.message||"Could not schedule this interruption.");}
+    }catch(e){setError(friendlyErrorMessage(e,"We couldn't schedule this break or leave. Check the time range and try again."));}
     finally{setBusy(false);}
   }
   async function signOut(){await supabase.auth.signOut();onSignedOut();go("/");}
