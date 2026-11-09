@@ -809,7 +809,7 @@ function AdminWorkspace({go}) {
         {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onUpdate={updateUser} onReset={resetPassword} onDelete={deleteAccount} onSeed={seedDemo} saving={saving}/>}
         {page==="services"&&<AdminServices data={data} onAdd={()=>setModal("service")} onEdit={s=>{setModal("service");setEditRecord(s);}} onSave={saveService} saving={saving}/>}
         {page==="windows"&&<AdminWindows data={data} onAdd={()=>setModal("window")} onEdit={w=>{setModal("window");setEditRecord(w);}} onSave={saveWindow} onStatus={setWindowStatus} onCloseWindow={w=>{setClosureWindow(w);setModal("closure");}} onReview={reviewInterruption} saving={saving}/>}
-        {page==="bookings"&&<AdminBookings data={data} onReview={decideBreak} saving={saving}/>}
+        {page==="bookings"&&<AdminBookings data={data}/>}
         {page==="analytics"&&<AdminAnalytics data={data} tokens={reportTokens} from={reportRange.from} to={reportRange.to} onRangeChange={(key,value)=>setReportRange(prev=>({...prev,[key]:value}))} loading={reportLoading} error={reportError}/>}
       </div>
       <footer className="portal-footer"><span>© 2026 OffLine · Administrator control centre.</span><span><i/> Database connected</span></footer>
@@ -890,14 +890,12 @@ function WindowClosureModal({windows,initialWindow,onClose,onSave,saving}) {
   </form></Modal>;
 }
 
-function AdminBookings({data,onReview,saving}) {
+function AdminBookings({data}) {
   const [filter,setFilter]=useState("all");
   const list=data.tokens.filter(t=>filter==="all"||t.status===filter).sort((a,b)=>new Date(b.booked_at)-new Date(a.booked_at));
-  const pending=data.breaks.filter(b=>b.status==="pending");
-  return <><PageHeading eyebrow="QUEUE OVERSIGHT" title="Bookings and break requests." sub="Review the campus-wide queue and manage exceptional counter interruptions."/>
+  return <><PageHeading eyebrow="QUEUE OVERSIGHT" title="Bookings." sub="Review appointments and queue outcomes across every campus service window. Leave approvals and time-bound closures are managed under Service Windows."/>
     <div className="filter-tabs">{["all","booked","arrived","serving","completed","cancelled"].map(s=><button key={s} className={filter===s?"active":""} onClick={()=>setFilter(s)}>{s==="all"?"All bookings":statusLabel(s)}</button>)}</div>
     <Panel title="All booking records" sub="Bookings across every campus service window." className="full-panel">{list.length?<div className="table-scroll"><table className="data-table"><thead><tr><th>TOKEN</th><th>STUDENT</th><th>WINDOW</th><th>APPOINTMENT</th><th>STATUS</th></tr></thead><tbody>{list.map(t=><tr key={t.id}><td><b className="token-id">#{String(t.token_number).padStart(2,"0")}</b></td><td><b>{data.users.find(u=>u.id===t.student_id)?.full_name||"Student"}</b><small>{data.users.find(u=>u.id===t.student_id)?.college_id||"—"}</small></td><td>{data.windows.find(w=>w.id===t.window_id)?.name||"Window"}</td><td>{fmtDateTime(data.slots.find(s=>s.id===t.slot_id)?.starts_at||t.booked_at)}</td><td><Status value={t.status}/></td></tr>)}</tbody></table></div>:<EmptyState icon={<Ticket/>} title="No bookings in this view" text="Change the status filter or wait for students to book appointments."/>}</Panel>
-    <Panel title="Emergency break approvals" sub="Staff can request a break; administrators decide whether a counter should pause." className="break-approvals">{pending.length?pending.map(b=><div className="break-approval-row" key={b.id}><IconTile tone="orange"><Coffee/></IconTile><span><b>{data.windows.find(w=>w.id===b.window_id)?.name||"Service window"}</b><small>{b.reason}</small></span><Button size="small" disabled={saving} onClick={()=>onReview(b.id,"approved")}>Approve</Button><Button size="small" variant="outline" disabled={saving} onClick={()=>onReview(b.id,"rejected")}>Reject</Button></div>):<EmptyState icon={<CheckCircle2/>} title="No pending break requests" text="Staff requests will appear here for your review."/>}</Panel>
   </>;
 }
 
