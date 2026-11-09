@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 :root{font-family:'DM Sans',sans-serif;color:#202a22;background:#f5f7f3;font-synthesis:none;text-rendering:optimizeLegibility;--ink:#202a22;--muted:#849086;--line:#e7ece5;--green:#215b41;--lime:#c8f36a;--paper:#fff;--bg:#f5f7f3;--navy:#1f4737}
 *{box-sizing:border-box}body{margin:0;min-width:320px;background:var(--bg)}button,input,select,textarea{font:inherit}button{cursor:pointer}a{cursor:pointer;color:inherit;text-decoration:none}button:disabled{opacity:.55;cursor:not-allowed;transform:none!important}
 .brand{display:flex;align-items:center;gap:11px}.brand-mark{width:40px;height:40px;border-radius:13px;background:#1e563e;color:#fff;display:grid;place-items:center;font:800 25px Manrope;letter-spacing:-2px;flex:0 0 auto}.brand-mark span{color:var(--lime)}.brand>b,.brand span>b{font:800 19px Manrope;display:block;letter-spacing:-.6px}.brand small{display:block;font-size:10px;color:#899189;margin-top:2px}
@@ -138,39 +138,48 @@ h1,h2,h3,h4,.brand>span:last-child>b,.panel-heading h3,.metric-card>strong,.prof
 .icon-tile.purple{background:#f1f1f7;color:#737a9a}
 .icon-tile.orange{background:#f7f2e9;color:#9a8050}
 
-/* Public homepage */
-.landing.official-landing{background:#f4f6f9}
-.official-landing .landing-nav{height:76px;background:#fff;border-bottom:1px solid #dce3eb;backdrop-filter:none}
-.official-landing .landing-nav .brand-mark{border-radius:7px}
-.official-landing .landing-nav .brand>span:last-child>b{font:700 18px 'Inter',sans-serif;letter-spacing:-.3px;color:#1c3c57}
-.official-landing .landing-nav .brand small{font-size:11px;color:#75869a}
-.official-landing .landing-nav-right>span{font-size:11px;color:#64758a}
-.official-landing .landing-nav-right>span i{background:#688c79;width:7px;height:7px}
-.official-landing .landing-hero{min-height:510px;padding:58px 0 56px}
-.official-landing .landing-copy h1{font:700 clamp(38px,4.5vw,57px)/1.13 'Inter',sans-serif;letter-spacing:-1.8px;color:#1d3852}
+/* Public homepage — original composition with the institutional palette */
+.landing.official-landing{background:radial-gradient(ellipse at 77% 12%,#e8eef4 0,transparent 34%),#f4f6f9}
+.official-landing .landing-nav{height:78px;border-bottom:1px solid #dce3eb;padding:0 max(5vw,24px);display:flex;align-items:center;justify-content:space-between;background:#ffffffb3;backdrop-filter:blur(12px)}
+.official-landing .landing-nav .brand-mark{border-radius:13px}
+.official-landing .landing-nav .brand>span:last-child>b{font:800 19px Manrope;color:#1e3448;letter-spacing:-.6px}
+.official-landing .landing-nav .brand small{font-size:10px;color:#718196}
+.official-landing .landing-nav-right{gap:20px}
+.official-landing .landing-nav-right>span{font-size:10px;color:#64758a;display:flex;align-items:center;gap:7px}
+.official-landing .landing-nav-right>span i{background:#6f8ca6;width:6px;height:6px;border-radius:50%}
+.official-landing .landing-main{width:min(1180px,90%);margin:0 auto;flex:1}
+.official-landing .landing-hero{min-height:470px;display:grid;grid-template-columns:1fr 1fr;align-items:center;padding:56px 0 40px}
+.official-landing .landing-copy{position:relative;z-index:2}
+.official-landing .landing-copy .eyebrow{font-size:9px;letter-spacing:1.55px;font-weight:800;color:#647a91;margin:0 0 9px}
+.official-landing .landing-copy h1{font:800 clamp(42px,5.4vw,65px)/1.08 Manrope;letter-spacing:-2.7px;margin:0;color:#1e3448}
 .official-landing .landing-copy h1 em{font-style:normal;color:#356a8e}
-.official-landing .landing-intro{max-width:520px;color:#5c6f82;font-size:15px;line-height:1.7;margin:20px 0 25px}
-.official-landing .landing-note{color:#66788a;font-size:11px}
-.official-landing .landing-note svg{color:#547c67}
-.official-landing .landing-actions .btn-outline{border-color:#c8d4df}
-.official-landing .landing-footer{border-top:1px solid #dce3eb;color:#728296;background:#fff;font-size:10px;padding:18px max(5vw,24px)}
-.official-service-visual{height:350px;display:grid;place-items:center}
-.service-portal-card{width:min(365px,90%);background:#fff;border:1px solid #dbe3eb;border-radius:9px;padding:22px 23px;box-shadow:0 12px 35px #1b36500c}
-.service-portal-card-head{display:flex;align-items:center;gap:12px}
-.portal-seal{width:42px;height:42px;border:1px solid #d4dfe9;border-radius:6px;display:grid;place-items:center;color:#2b587d;background:#f5f8fb}
-.service-portal-card-head>span:nth-child(2){flex:1}
-.service-portal-card-head small,.service-portal-card-head b{display:block}
-.service-portal-card-head small{font-size:9px;color:#7a8999;letter-spacing:1px;font-weight:700}
-.service-portal-card-head b{font:700 16px 'Inter',sans-serif;color:#223d56;margin-top:3px}
-.portal-status{font-size:8px;letter-spacing:.7px;color:#47755d;background:#edf5ef;padding:5px 7px;border-radius:4px;font-weight:800}
-.service-portal-divider{border-top:1px solid #e6ebf0;margin:18px 0 7px}
-.service-portal-row{display:flex;align-items:center;gap:12px;padding:12px 3px;border-bottom:1px solid #edf1f5;color:#416889}
-.service-portal-row>span{flex:1}
-.service-portal-row b,.service-portal-row small{display:block}
-.service-portal-row b{font-size:12px;color:#304b64;font-weight:700}
-.service-portal-row small{font-size:10px;color:#7c8b9b;margin-top:3px}
-.service-portal-card-foot{display:flex;align-items:center;gap:7px;padding-top:15px;color:#718396;font-size:10px}
+.official-landing .landing-intro{max-width:480px;color:#5c6f82;font-size:13px;line-height:1.75;margin:18px 0 23px}
+.official-landing .landing-actions{display:flex;gap:10px;flex-wrap:wrap}
+.official-landing .landing-note{display:flex;align-items:center;gap:7px;color:#728296;font-size:9px;margin-top:18px}
+.official-landing .landing-note svg{color:#557c9b}
+.official-landing .landing-visual{height:360px;position:relative;display:grid;place-items:center}
+.official-landing .visual-ring{position:absolute;border:1px solid #d8e2eb;border-radius:50%;width:335px;height:335px}
+.official-landing .visual-ring.ring-b{width:260px;height:260px;border-style:dashed;opacity:.9}
+.official-landing .visual-ticket{width:245px;background:#fff;border:1px solid #dce5ed;border-radius:16px;padding:18px 20px;box-shadow:0 22px 55px #203b531d;transform:rotate(5deg);position:relative;z-index:1}
+.official-landing .visual-ticket>div:first-child{display:flex;align-items:center;justify-content:space-between;color:#8292a2;font-size:9px;font-weight:800;letter-spacing:1.2px}
+.official-landing .visual-ticket strong{display:block;font:800 70px Manrope;letter-spacing:-4px;color:#1e3d58;margin:8px 0 10px}
+.official-landing .visual-ticket strong span{color:#b49a5b}
+.official-landing .visual-ticket hr{border:0;border-top:1px dashed #d5dfe8;margin:0 0 12px}
+.official-landing .visual-ticket>small{font-size:8px;font-weight:800;letter-spacing:1px;color:#9b8552}
+.official-landing .visual-ticket-foot{display:flex;align-items:center;justify-content:space-between;margin-top:18px;padding-top:11px;border-top:1px solid #edf1f5}
+.official-landing .visual-ticket-foot span{font-size:7px;letter-spacing:.8px;color:#8797a6}
+.official-landing .visual-ticket-foot b{font-size:7px;letter-spacing:.8px;color:#315f84;background:#eef3f8;padding:5px 7px;border-radius:4px}
+.official-landing .visual-floating{position:absolute;right:2%;bottom:48px;z-index:2;background:#fff;border:1px solid #dce5ed;border-radius:20px;padding:10px 13px;box-shadow:0 8px 22px #203b5317;display:flex;gap:7px;align-items:center;color:#315f84;font-size:9px;font-weight:700}
+.official-landing .visual-floating.second{right:auto;left:2%;bottom:110px;color:#667d92}
+.official-landing .landing-footer{display:flex;justify-content:space-between;gap:20px;padding:17px max(5vw,24px);border-top:1px solid #dce3eb;color:#78899a;font-size:8px;background:transparent}
 
+/* Retain the original homepage button proportions and interaction */
+.official-landing .btn{border:1px solid transparent;border-radius:8px;background:#d5bf83;color:#243447;padding:11px 15px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform .16s,filter .16s,background .16s}
+.official-landing .btn:hover{filter:brightness(.97);transform:translateY(-1px);background:#d5bf83}
+.official-landing .btn-primary{background:#d5bf83;color:#243447}
+.official-landing .btn-outline{background:#fff;border-color:#c9d5e1;color:#31536f}
+.official-landing .btn-outline:hover{background:#f3f7fa;border-color:#9eb3c7;color:#173b5a}
+.official-landing .btn-small{padding:8px 11px;font-size:9px}
 /* Auth screens */
 .auth-page{background:#f3f5f8}
 .auth-top{border-bottom:1px solid #dce3eb}
@@ -323,16 +332,13 @@ h1,h2,h3,h4,.brand>span:last-child>b,.panel-heading h3,.metric-card>strong,.prof
   .portal-content{padding:23px 18px 28px}
   .portal-topbar{padding:0 18px}
   .portal-footer{padding:14px 18px}
-  .official-landing .landing-hero{padding:42px 0}
 }
 @media(max-width:650px){
-  .official-landing .landing-nav{height:68px;padding:0 18px}
+  .official-landing .landing-nav{height:65px;padding:0 15px}
   .official-landing .landing-nav-right>span{display:none}
-  .official-landing .landing-hero{grid-template-columns:1fr;gap:20px}
-  .official-landing .landing-copy h1{font-size:39px;letter-spacing:-1.2px}
-  .official-service-visual{height:auto;padding:8px 0 18px}
-  .service-portal-card{width:100%}
-  .official-landing .landing-footer{padding:15px 18px;flex-direction:column;gap:6px}
+  .official-landing .landing-main{width:92%}.official-landing .landing-hero{grid-template-columns:1fr;padding:42px 0 8px;min-height:0}
+  .official-landing .landing-copy h1{font-size:44px}
+  .official-landing .landing-footer{padding:13px 15px;font-size:7px}
   .official-student-hero>div:first-child{width:100%}
   .official-student-art{display:none}
   .student-hero.official-student-hero{padding:24px 22px}
@@ -341,4 +347,13 @@ h1,h2,h3,h4,.brand>span:last-child>b,.panel-heading h3,.metric-card>strong,.prof
   .page-heading h1{font-size:23px}
   .panel{padding:16px}
   .metric-grid{gap:8px}
+  .official-landing .landing-nav-right .btn{padding:8px 9px;font-size:8px}
+  .official-landing .landing-intro{font-size:11px}
+  .official-landing .landing-visual{height:260px;margin-top:10px}
+  .official-landing .visual-ring{width:235px;height:235px}
+  .official-landing .visual-ring.ring-b{width:185px;height:185px}
+  .official-landing .visual-ticket{width:195px;padding:14px}
+  .official-landing .visual-ticket strong{font-size:54px}
+  .official-landing .visual-floating{bottom:18px}
+  .official-landing .visual-floating.second{bottom:75px}
 }
