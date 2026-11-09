@@ -77,7 +77,7 @@ async function createUser(b:Record<string,unknown>){
   }
 }
 
-async function getDashboard(){const a=await Promise.all([db.from("offline_profiles").select("id,email,full_name,college_id,role,account_status,created_at").order("created_at",{ascending:false}),db.from("offline_works").select("*").order("name"),db.from("offline_windows").select("*").order("name"),db.from("offline_slots").select("*").gte("slot_date",dateIST(new Date())).lte("slot_date",dateIST(new Date(Date.now()+86400000))).order("starts_at").limit(1200),db.from("offline_tokens").select("*").order("booked_at",{ascending:false}).limit(1000),db.from("offline_break_requests").select("*").order("requested_at",{ascending:false})]);const bad=a.find(x=>x.error);if(bad?.error)throw new Error(bad.error.message);return{users:a[0].data||[],services:a[1].data||[],windows:a[2].data||[],slots:a[3].data||[],tokens:a[4].data||[],breaks:a[5].data||[]};}
+async function getDashboard(){const a=await Promise.all([db.from("offline_profiles").select("id,email,full_name,college_id,role,account_status,created_at").order("created_at",{ascending:false}),db.from("offline_works").select("*").order("name"),db.from("offline_windows").select("*").order("name"),db.from("offline_slots").select("*").gte("slot_date",dateIST(new Date())).lte("slot_date",dateIST(new Date(Date.now()+86400000))).order("starts_at").limit(1200),db.from("offline_tokens").select("*").order("booked_at",{ascending:false}).limit(1000),db.from("offline_break_requests").select("*").order("requested_at",{ascending:false}),db.from("offline_window_interruptions").select("*").order("starts_at",{ascending:false}).limit(500)]);const bad=a.find(x=>x.error);if(bad?.error)throw new Error(bad.error.message);return{users:a[0].data||[],services:a[1].data||[],windows:a[2].data||[],slots:a[3].data||[],tokens:a[4].data||[],breaks:a[5].data||[],interruptions:a[6].data||[]};}
 
 async function seedDemo() {
   const definitions = [
@@ -146,9 +146,28 @@ if(action==="login"){const pass=typeof b.passcode==="string"?b.passcode.trim():"
 const s=await isAdmin(req);if(!s)return out({error:"Admin session expired. Sign in again."},401);
 if(action==="logout"){const {error}=await db.from("offline_admin_sessions").update({revoked_at:new Date().toISOString()}).eq("token_hash",await hash(req.headers.get("x-admin-session")||""));if(error)return out({error:"Could not safely revoke the admin session. Try again."},500);return out({ok:true});}
 if(action==="dashboard")return out(await getDashboard());
+if(action==="schedule_window_closure"){
+  const id=txt(b.window_id,80),reason=txt(b.reason,500);
+  const starts=txt(b.starts_at,60),ends=txt(b.ends_at,60);
+  if(!id||!starts||!ends||reason.length<3)return out({error:"Window, time range and reason are required."},400);
+  const {data,error}=await db.rpc("offline_admin_schedule_window_closure",{
+    p_window_id:id,p_starts_at:starts,p_ends_at:ends,p_reason:reason
+  });
+  if(error)return out({error:error.message},400);
+  return out({ok:true,...(data?.[0]||{})});
+}
+if(action==="review_interruption"){
+  const id=txt(b.id,80);
+  if(!id||typeof b.approved!=="boolean")return out({error:"Interruption and decision are required."},400);
+  const {data,error}=await db.rpc("offline_admin_review_interruption",{
+    p_interruption_id:id,p_approved:b.approved
+  });
+  if(error)return out({error:error.message},409);
+  return out({ok:true,...(data?.[0]||{})});
+}
 if(action==="admin_notifications"){
   const {data,error}=await db.from("offline_admin_notifications")
-    .select("id,token_id,break_request_id,title,body,kind,created_at,read_at")
+    .select("id,token_id,break_request_id,interruption_id,title,body,kind,created_at,read_at")
     .order("created_at",{ascending:false}).limit(60);
   if(error)return out({error:error.message},500);
   return out({notifications:data||[]});
