@@ -26,6 +26,7 @@ const fmtTime = (value) => value ? new Date(value).toLocaleTimeString("en-IN",{h
 const fmtDate = (value) => value ? new Date(value+"T12:00:00").toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"}) : "—";
 const fmtDateTime = (value) => value ? new Date(value).toLocaleString("en-IN",{weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}) : "—";
 const capacityForDuration = (minutes) => Math.max(1,Math.floor(45/Math.max(1,Number(minutes)||10)));
+const localDateTimeValue = (value) => { const d=new Date(value); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
 const fmtRelative = (value) => {
   if(!value)return "—";
   const mins=Math.max(0,Math.round((new Date(value).getTime()-Date.now())/60000));
@@ -118,7 +119,7 @@ function LoadingScreen({text="Loading OffLine…"}) {
 
 function Landing({go}) {
   return <div className="landing">
-    <header className="landing-nav"><a className="brand" onClick={()=>go("/")}><span className="brand-mark">O<span>.</span></span><span><b>OffLine</b><small>Campus, without the queue.</small></span></a><div className="landing-nav-right"><span><i/> Campus services portal</span></div></header>
+    <header className="landing-nav"><a className="brand" onClick={()=>go("/")}><span className="brand-mark">O<span>.</span></span><span><b>OffLine</b><small>Campus, without the queue.</small></span></a><div className="landing-nav-right"><span><i/> Campus services portal</span><Button size="small" variant="outline" onClick={()=>go("/admin/login")}>Admin sign in <ArrowRight size={14}/></Button></div></header>
     <main className="landing-main">
       <section className="landing-hero">
         <div className="landing-copy"><p className="eyebrow">SMART CAMPUS OPERATIONS</p><h1>Your campus.<br/><em>Without the wait.</em></h1><p className="landing-intro">Book service appointments, manage counter queues and keep every campus visit moving with one connected workspace.</p><div className="landing-actions"><Button onClick={()=>go("/student/login")}>Student sign in <ArrowRight size={16}/></Button><Button onClick={()=>go("/staff/login")}>Staff sign in <ArrowRight size={16}/></Button></div><div className="landing-note"><ShieldCheck size={15}/> Accounts are issued by your campus administrator.</div></div>
@@ -230,7 +231,10 @@ function useNotifications(userId) {
 
 function NotificationCenter({notifications=[],onMarkRead,onMarkAllRead,permission,onEnable}) {
   const [open,setOpen]=useState(false);
+  const [category,setCategory]=useState("all");
   const unread=notifications.filter(n=>!n.read_at).length;
+  const categories=[{id:"all",label:"All"},{id:"booking",label:"Bookings"},{id:"queue",label:"Queue"},{id:"cancellation",label:"Changes"},{id:"leave",label:"Leave & breaks"},{id:"window",label:"Windows"}];
+  const relevant=notifications.filter(n=>category==="all"||(category==="leave"?(n.kind==="leave"||n.kind==="break"):n.kind===category));
   return <div className="notification-center">
     <button className={"notification-trigger "+(open?"is-open":"")} title="Notifications" aria-label="Notifications" onClick={()=>setOpen(v=>!v)}>
       <Bell size={18}/>{unread>0&&<span className="notification-count">{unread>99?"99+":unread}</span>}
@@ -242,10 +246,11 @@ function NotificationCenter({notifications=[],onMarkRead,onMarkAllRead,permissio
       {onEnable&&permission==="default"&&<button className="notification-permission" onClick={onEnable}><Bell size={14}/> Enable desktop alerts</button>}
       {onEnable&&permission==="denied"&&<p className="notification-permission-note">Desktop alerts are blocked in this browser. In-app notifications still work.</p>}
       {notifications.length>0&&unread>0&&<button className="notification-mark-all" onClick={onMarkAllRead}>Mark all as read</button>}
+      <div className="notification-filters">{categories.map(c=><button key={c.id} className={category===c.id?"active":""} onClick={()=>setCategory(c.id)}>{c.label}</button>)}</div>
       <div className="notification-list">
-        {notifications.length?notifications.map(n=><button key={n.id} className={"notification-item "+(n.read_at?"read":"unread")} onClick={()=>{if(!n.read_at)onMarkRead?.(n.id);}}>
-          <span className={"notification-dot "+(n.read_at?"":"active")}/><span><b>{n.title}</b><small>{n.body}</small><time>{fmtDateTime(n.created_at)}</time></span>
-        </button>):<div className="notification-empty"><Bell size={22}/><b>No notifications yet</b><span>Booking and queue updates will appear here.</span></div>}
+        {relevant.length?relevant.map(n=><button key={n.id} className={"notification-item "+(n.read_at?"read":"unread")} onClick={()=>{if(!n.read_at)onMarkRead?.(n.id);}}>
+          <span className={"notification-dot "+(n.read_at?"":"active")}/><span><b>{n.title}</b><small>{n.body}</small><time>{n.kind==="booking"?"BOOKING":n.kind==="queue"?"QUEUE":n.kind==="cancellation"?"CHANGE":n.kind==="leave"||n.kind==="break"?"LEAVE / BREAK":n.kind==="window"?"WINDOW":"UPDATE"} · {fmtDateTime(n.created_at)}</time></span>
+        </button>):<div className="notification-empty"><Bell size={22}/><b>No notifications in this category</b><span>Relevant booking and service updates will appear here.</span></div>}
       </div>
     </section>}
   </div>;
@@ -275,6 +280,22 @@ function EmptyState({icon,title,text,action}) {
   return <div className="empty-state"><IconTile>{icon}</IconTile><b>{title}</b><span>{text}</span>{action}</div>;
 }
 
+function ProfilePage({profile,role}) {
+  return <><PageHeading eyebrow="ACCOUNT DETAILS" title="Your profile." sub="Your campus account information and access status."/>
+    <Panel title="Profile information" sub="These details are maintained by your campus administrator." className="profile-panel">
+      <div className="profile-identity"><div className="profile-avatar">{initials(profile?.full_name||"User")}</div><div><h2>{profile?.full_name||"Campus member"}</h2><span className={"role-chip "+role}>{role==="staff"?"Staff account":"Student account"}</span></div></div>
+      <div className="profile-detail-grid">
+        <div><small>FULL NAME</small><b>{profile?.full_name||"—"}</b></div>
+        <div><small>EMAIL ADDRESS</small><b>{profile?.email||"—"}</b></div>
+        <div><small>{role==="staff"?"STAFF ID":"STUDENT ID"}</small><b>{profile?.college_id||"—"}</b></div>
+        <div><small>ACCOUNT STATUS</small><b>{profile?.account_status==="active"?"Active":"Inactive"}</b></div>
+        <div><small>PORTAL ROLE</small><b>{role==="staff"?"Staff":"Student"}</b></div>
+        <div><small>ACCOUNT CREATED</small><b>{profile?.created_at?fmtDateTime(profile.created_at):"—"}</b></div>
+      </div>
+    </Panel>
+  </>;
+}
+
 function StudentWorkspace({session,path,go,onSignedOut}) {
   const [profile,setProfile]=useState(null);
   const [services,setServices]=useState([]);
@@ -292,11 +313,12 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   const [etas,setEtas]=useState({});
   const notificationState=useNotifications(session.user.id);
 
-  const page=path.endsWith("/book")?"book":path.endsWith("/tokens")?"tokens":"overview";
+  const page=path.endsWith("/book")?"book":path.endsWith("/tokens")?"tokens":path.endsWith("/profile")?"profile":"overview";
   const nav=[
     {id:"overview",label:"Overview",icon:LayoutDashboard,path:"/student/dashboard"},
     {id:"book",label:"Book a service",icon:CalendarDays,path:"/student/book"},
     {id:"tokens",label:"My tokens",icon:Ticket,path:"/student/tokens"},
+    {id:"profile",label:"Profile",icon:UserCheck,path:"/student/profile"},
   ];
   const notify=(msg)=>{setToast(msg);window.clearTimeout(notify.timer);notify.timer=window.setTimeout(()=>setToast(""),3200);};
   const load=useCallback(async()=>{
@@ -369,6 +391,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
     {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} estimates={etas} go={go}/>}
     {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} slotUsage={slotUsage} tokens={tokens} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
     {page==="tokens"&&<StudentTokenPage tokens={tokens} windows={windows} services={services} estimates={etas} onCancel={cancel} go={go}/>}
+    {page==="profile"&&<ProfilePage profile={profile} role="student"/>}
     {toast&&<Toast>{toast}</Toast>}
   </PortalFrame>;
 }
@@ -413,12 +436,17 @@ function StudentBooking({services,windows,slots,slotUsage,tokens,selectedWork,se
 function StepTitle({n,title,sub}){return <div className="step-title"><span>{n}</span><div><h3>{title}</h3><p>{sub}</p></div></div>;}
 function SummaryRow({label,value}){return <div className="summary-row"><small>{label}</small><b>{value}</b></div>;}
 function StudentTokenPage({tokens,windows,services,estimates,onCancel,go}) {
-  const sorted=[...tokens].sort((a,b)=>new Date(b.booked_at)-new Date(a.booked_at));
-  return <><PageHeading eyebrow="YOUR BOOKINGS" title="My tokens." sub="Every appointment, every update, all in one place." action={<Button onClick={()=>go("/student/book")}><Plus size={16}/> New booking</Button>}/>
-    <div className="token-summary-strip"><div><Ticket/><span><small>Total bookings</small><b>{tokens.length}</b></span></div><div><Clock3/><span><small>Active</small><b>{tokens.filter(t=>ACTIVE.includes(t.status)).length}</b></span></div><div><CheckCircle2/><span><small>Completed</small><b>{tokens.filter(t=>t.status==="completed").length}</b></span></div></div>
-    <Panel title="Appointment history" sub="Track current bookings and review earlier visits." className="full-panel">
-      {sorted.length?<div className="table-scroll"><table className="data-table"><thead><tr><th>TOKEN</th><th>SERVICE / WINDOW</th><th>APPOINTMENT TIME</th><th>QUEUE POSITION</th><th>ESTIMATED TURN</th><th>STATUS</th><th></th></tr></thead><tbody>{sorted.map(t=><tr key={t.id}><td><b className="token-id">#{String(t.token_number).padStart(2,"0")}</b></td><td><b>{windows.find(w=>w.id===t.window_id)?.name||"Campus counter"}</b><small>{t.slot?.slot_date?fmtDate(t.slot.slot_date):"Appointment"}</small></td><td>{fmtDateTime(t.slot?.starts_at||t.booked_at)}</td><td>#{estimates?.[t.id]?.queue_position??t.queue_position??"—"}</td><td>{ACTIVE.includes(t.status)?fmtDateTime(estimates?.[t.id]?.estimated_at):"—"}</td><td><Status value={t.status}/></td><td>{ACTIVE.includes(t.status)&&<button className="text-danger" onClick={()=>onCancel(t)}>Cancel</button>}</td></tr>)}</tbody></table></div>:<EmptyState icon={<Ticket/>} title="No tokens yet" text="Your confirmed appointments will appear here." action={<Button size="small" onClick={()=>go("/student/book")}>Book your first service</Button>}/>}
+  const active=[...tokens].filter(t=>ACTIVE.includes(t.status)).sort((a,b)=>new Date(a.slot?.starts_at||a.booked_at)-new Date(b.slot?.starts_at||b.booked_at));
+  const current=active[0];
+  const sorted=[...tokens].sort((a,b)=>new Date(b.slot?.starts_at||b.booked_at)-new Date(a.slot?.starts_at||a.booked_at));
+  const serviceFor=t=>services.find(s=>s.id===windows.find(w=>w.id===t.window_id)?.work_id)?.name||"Campus service";
+  const history=<div className="table-scroll"><table className="data-table"><thead><tr><th>TOKEN</th><th>SERVICE / WINDOW</th><th>APPOINTMENT TIME</th><th>QUEUE POSITION</th><th>ESTIMATED TURN</th><th>STATUS</th><th></th></tr></thead><tbody>{sorted.map(t=><tr key={t.id}><td><b className="token-id">#{String(t.token_number).padStart(2,"0")}</b></td><td><b>{serviceFor(t)}</b><small>{windows.find(w=>w.id===t.window_id)?.name||"Campus counter"}</small></td><td>{fmtDateTime(t.slot?.starts_at||t.booked_at)}</td><td>#{estimates?.[t.id]?.queue_position??t.queue_position??"—"}</td><td>{ACTIVE.includes(t.status)?fmtDateTime(estimates?.[t.id]?.estimated_at):"—"}</td><td><Status value={t.status}/></td><td>{ACTIVE.includes(t.status)&&<button className="text-danger" onClick={()=>onCancel(t)}>Cancel</button>}</td></tr>)}</tbody></table></div>;
+  return <><PageHeading eyebrow="YOUR BOOKINGS" title="My tokens." sub="Your next appointment first. All your other bookings stay neatly tucked away." action={<Button onClick={()=>go("/student/book")}><Plus size={16}/> New booking</Button>}/>
+    <div className="token-summary-strip"><div><Ticket/><span><small>Total bookings</small><b>{tokens.length}</b></span></div><div><Clock3/><span><small>Active</small><b>{active.length}</b></span></div><div><CheckCircle2/><span><small>Completed</small><b>{tokens.filter(t=>t.status==="completed").length}</b></span></div></div>
+    <Panel title="Current token" sub="Your next active appointment and live queue estimate." className="full-panel current-token-panel">
+      {current?<div className="current-token-card"><div className="current-token-main"><small>YOUR NEXT TOKEN</small><strong>#{String(current.token_number).padStart(2,"0")}</strong><Status value={current.status}/><h3>{serviceFor(current)}</h3><p>{windows.find(w=>w.id===current.window_id)?.name||"Campus counter"}</p></div><div className="current-token-details"><div><small>APPOINTMENT</small><b>{fmtDateTime(current.slot?.starts_at||current.booked_at)}</b></div><div><small>QUEUE POSITION</small><b>#{estimates?.[current.id]?.queue_position??current.queue_position??"—"}</b></div><div><small>ESTIMATED TURN</small><b>{fmtDateTime(estimates?.[current.id]?.estimated_at)}</b></div><div><small>DATE</small><b>{fmtDate(current.slot?.slot_date)}</b></div><div className="current-token-actions">{active.length>1&&<span>{active.length-1} more active token(s) in history</span>}<Button size="small" variant="outline" onClick={()=>onCancel(current)}>Cancel token</Button></div></div></div>:<EmptyState icon={<Ticket/>} title="No current token" text="You do not have an active appointment. Book a service and your next token will appear here." action={<Button size="small" onClick={()=>go("/student/book")}>Book a service</Button>}/>}
     </Panel>
+    <details className="token-history-dropdown"><summary><span><Ticket size={17}/> All tokens and appointment history</span><span>{tokens.length} record(s) <ChevronDown size={16}/></span></summary><div className="token-history-body">{tokens.length?history:<EmptyState icon={<Ticket/>} title="No history yet" text="Your bookings will appear here after you make one."/ >}</div></details>
   </>;
 }
 
@@ -433,13 +461,14 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
   const [toast,setToast]=useState("");
   const [windowId,setWindowId]=useState("");
   const [breakModal,setBreakModal]=useState(false);
-  const [breakReason,setBreakReason]=useState("");
+  const [interruptions,setInterruptions]=useState([]);
   const [busy,setBusy]=useState(false);
-  const page=path.endsWith("/queue")?"queue":path.endsWith("/windows")?"windows":"overview";
+  const page=path.endsWith("/queue")?"queue":path.endsWith("/windows")?"windows":path.endsWith("/profile")?"profile":"overview";
   const nav=[
     {id:"overview",label:"Overview",icon:LayoutDashboard,path:"/staff/dashboard"},
     {id:"queue",label:"Live queue",icon:Users,path:"/staff/queue"},
     {id:"windows",label:"Window operations",icon:DoorOpen,path:"/staff/windows"},
+    {id:"profile",label:"Profile",icon:UserCheck,path:"/staff/profile"},
   ];
   const notify=(s)=>{setToast(s);window.clearTimeout(notify.timer);notify.timer=window.setTimeout(()=>setToast(""),3200);};
   const load=useCallback(async()=>{
@@ -455,6 +484,9 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
       const failed=[w,t].find(x=>x.error);if(failed?.error)throw failed.error;
       setProfile(p);setWindows(w.data||[]);
       const assignedIds=(w.data||[]).map(x=>x.id);
+      const interruptionResult=assignedIds.length?await supabase.from("offline_window_interruptions").select("*").in("window_id",assignedIds).gte("ends_at",new Date().toISOString()).order("starts_at"):{data:[],error:null};
+      if(interruptionResult.error)throw interruptionResult.error;
+      setInterruptions(interruptionResult.data||[]);
       const etaResult=await supabase.rpc("offline_queue_estimates",{p_window_ids:assignedIds});
       if(etaResult.error)throw etaResult.error;
       setEtas(Object.fromEntries((etaResult.data||[]).map(x=>[x.token_id,x])));
@@ -491,18 +523,22 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
     }catch(e){notify(e.message||"Action failed.");}
     finally{setBusy(false);}
   }
-  async function toggleWindow(w){
-    const next=w.status==="open"?"closed":"open";
-    const {error}=await supabase.from("offline_windows").update({status:next}).eq("id",w.id);
-    if(error)return notify(error.message);
-    await load();notify("Counter "+next+".");
-  }
-  async function requestBreak(e){
-    e.preventDefault();
-    if(!breakReason.trim())return notify("Please enter the reason for the break.");
-    const {error}=await supabase.from("offline_break_requests").insert({window_id:windowId,requested_by:profile.id,reason:breakReason.trim()});
-    if(error)return notify(error.message);
-    setBreakModal(false);setBreakReason("");notify("Emergency break request sent to the administrator.");
+  async function scheduleInterruption(payload){
+    setBusy(true);
+    try{
+      const {data,error}=await supabase.rpc("offline_staff_schedule_interruption",{
+        p_window_id:payload.window_id,p_kind:payload.kind,p_starts_at:payload.starts_at,
+        p_ends_at:payload.ends_at,p_reason:payload.reason||""
+      });
+      if(error)throw error;
+      const result=Array.isArray(data)?data[0]:data;
+      setBreakModal(false);
+      await load();
+      notify(payload.kind==="short_break"
+        ? "Short break scheduled. "+(result?.cancelled_tokens||0)+" affected booking(s) cancelled and students notified."
+        : "Leave request submitted for administrator approval.");
+    }catch(e){notify(e.message||"Could not schedule this interruption.");}
+    finally{setBusy(false);}
   }
   async function signOut(){await supabase.auth.signOut();onSignedOut();go("/");}
   if(loading&&!profile)return <LoadingScreen text="Opening your staff workspace…"/>;
@@ -510,15 +546,16 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
     {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
     {page==="overview"&&<StaffOverview windows={windows} win={win} windowId={windowId} setWindowId={setWindowId} queue={queue} arrived={arrived} serving={serving} tokens={tokens} etas={etas} onAction={action} go={go} onBreak={()=>setBreakModal(true)}/>}
     {page==="queue"&&<StaffQueuePage windows={windows} win={win} windowId={windowId} setWindowId={setWindowId} queue={queue} etas={etas} onAction={action} busy={busy}/>}
-    {page==="windows"&&<StaffWindowPage windows={windows} onToggle={toggleWindow} onBreak={(id)=>{setWindowId(id);setBreakModal(true);}}/>}
+    {page==="windows"&&<StaffWindowPage windows={windows} interruptions={interruptions} onBreak={(id)=>{setWindowId(id);setBreakModal(true);}}/>}
+    {page==="profile"&&<ProfilePage profile={profile} role="staff"/>}
     {toast&&<Toast>{toast}</Toast>}
-    {breakModal&&<Modal title="Request an emergency break" eyebrow="COUNTER OPERATIONS" onClose={()=>setBreakModal(false)}><form className="form-stack" onSubmit={requestBreak}><p className="muted">This request will be sent to the campus administrator. Your counter remains open until the request is reviewed.</p><Field label="Reason for the break"><textarea required rows="4" value={breakReason} onChange={e=>setBreakReason(e.target.value)} placeholder="Briefly describe why the counter needs to pause."/></Field><div className="modal-actions"><Button type="button" variant="ghost" onClick={()=>setBreakModal(false)}>Cancel</Button><Button type="submit">Send request <ArrowRight size={15}/></Button></div></form></Modal>}
+    {breakModal&&<StaffInterruptionModal windows={windows} initialWindow={windowId} onClose={()=>setBreakModal(false)} onSubmit={scheduleInterruption} saving={busy}/>}
   </PortalFrame>;
 }
 
 function StaffOverview({windows,win,windowId,setWindowId,queue,arrived,serving,tokens,etas,onAction,go,onBreak}) {
   return <>
-    <PageHeading eyebrow="SERVICE OPERATIONS" title={"Welcome, "+(windows[0]?.name?"team member":"staff member")+"."} sub="Keep the line moving. Students are updated as you work." action={<Button variant="outline" onClick={onBreak}><Coffee size={15}/> Request break</Button>}/>
+    <PageHeading eyebrow="SERVICE OPERATIONS" title={"Welcome, "+(windows[0]?.name?"team member":"staff member")+"."} sub="Keep the line moving. Students are updated as you work." action={<Button variant="outline" onClick={onBreak}><Coffee size={15}/> Schedule break / leave</Button>}/>
     <div className="metric-grid three"><Metric label="Waiting for arrival" value={String(queue.filter(t=>t.status==="booked").length).padStart(2,"0")} hint="Booked, not checked in" icon={<Clock3/>}/><Metric label="Students checked in" value={String(arrived.length).padStart(2,"0")} hint="Ready to be served" icon={<UserCheck/>} tone="blue"/><Metric label="Completed visits" value={String(tokens.filter(t=>t.status==="completed").length).padStart(2,"0")} hint="All assigned counters" icon={<CheckCircle2/>} tone="purple"/></div>
     <div className="content-grid">
       <Panel title="Counter at a glance" sub="Select an assigned window to see its current state." action={<select className="compact-select" value={windowId} onChange={e=>setWindowId(e.target.value)}>{windows.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select>}>
@@ -537,8 +574,31 @@ function StaffQueuePage({windows,win,windowId,setWindowId,queue,etas,onAction,bu
     {queue.length?<div className="queue-list">{queue.map(t=><div className={"queue-row "+(t.status==="serving"?"is-serving":"")} key={t.id}><div className="queue-number">#{String(t.token_number).padStart(2,"0")}</div><div className="queue-student"><b>{t.student_name||"Student"}</b><small>{t.status==="arrived"?"Checked in · "+fmtTime(t.arrived_at):t.status==="serving"?"At counter now":"Awaiting physical arrival"} · Appt {fmtDateTime(t.slot?.starts_at)} · ETA {fmtDateTime(etas?.[t.id]?.estimated_at)}</small></div><Status value={t.status}/><div className="queue-actions">{t.status==="booked"&&<Button size="tiny" variant="soft" disabled={busy} onClick={()=>onAction(t,"arrive")}>Mark arrived</Button>}{t.status==="arrived"&&<Button size="tiny" disabled={busy} onClick={()=>onAction(t,"start")}>Call student</Button>}{t.status==="serving"&&<Button size="tiny" disabled={busy} onClick={()=>onAction(t,"complete")}><Check size={13}/> Complete</Button>}{["booked","arrived"].includes(t.status)&&<button className="text-danger" onClick={()=>onAction(t,"cancel")}>No-show</button>}</div></div>)}</div>:<EmptyState icon={<Users/>} title="Queue is clear" text="New appointments for this counter will appear here."/>}
   </Panel></>;
 }
-function StaffWindowPage({windows,onToggle,onBreak}) {
-  return <><PageHeading eyebrow="COUNTER STATUS" title="Window operations." sub="Open or close your assigned service counters and request a temporary break."/><div className="window-grid">{windows.map(w=><article className="window-card" key={w.id}><div className="window-card-top"><IconTile><Building2/></IconTile><span className={"window-state "+w.status}>● {w.status}</span></div><h3>{w.name}</h3><p>{w.location}</p><div className="window-card-actions"><Button size="small" variant={w.status==="open"?"soft":"primary"} onClick={()=>onToggle(w)}>{w.status==="open"?"Close window":"Open window"}</Button><Button size="small" variant="outline" onClick={()=>onBreak(w.id)}><Coffee size={14}/> Request break</Button></div></article>)}</div></>;
+function StaffWindowPage({windows,interruptions,onBreak}) {
+  const now=Date.now();
+  return <><PageHeading eyebrow="COUNTER STATUS" title="Window operations." sub="Schedule a same-day short break instantly or submit leave for administrator approval."/><div className="window-grid">{windows.map(w=>{
+    const periods=(interruptions||[]).filter(x=>x.window_id===w.id&&x.status==="scheduled").sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
+    const current=periods.find(x=>new Date(x.starts_at).getTime()<=now&&new Date(x.ends_at).getTime()>now);
+    const next=periods.find(x=>new Date(x.starts_at).getTime()>now);
+    return <article className="window-card" key={w.id}><div className="window-card-top"><IconTile><Building2/></IconTile><span className={"window-state "+(current?"break":w.status)}>● {current?"On break":w.status}</span></div><h3>{w.name}</h3><p>{w.location}</p>{current&&<div className="window-reopen-note">Temporarily unavailable · Reopens at <b>{fmtDateTime(current.ends_at)}</b></div>}{!current&&next&&<div className="window-reopen-note">Next scheduled pause: {fmtDateTime(next.starts_at)} · Reopens {fmtDateTime(next.ends_at)}</div>}<div className="window-card-actions"><Button size="small" variant="outline" onClick={()=>onBreak(w.id)}><Coffee size={14}/> Schedule break / leave</Button></div></article>;
+  })}</div></>;
+}
+
+function StaffInterruptionModal({windows,initialWindow,onClose,onSubmit,saving}) {
+  const [windowId,setWindowId]=useState(initialWindow||windows[0]?.id||"");
+  const [kind,setKind]=useState("short_break");
+  const [start,setStart]=useState(()=>localDateTimeValue(Date.now()+5*60000));
+  const [end,setEnd]=useState(()=>localDateTimeValue(Date.now()+25*60000));
+  const [reason,setReason]=useState("");
+  const submit=e=>{e.preventDefault();onSubmit({window_id:windowId,kind,starts_at:new Date(start).toISOString(),ends_at:new Date(end).toISOString(),reason});};
+  return <Modal title={kind==="short_break"?"Schedule a short break":"Request staff leave"} eyebrow="STAFF AVAILABILITY" onClose={onClose}><form className="form-stack" onSubmit={submit}>
+    <Field label="Service window"><select value={windowId} onChange={e=>setWindowId(e.target.value)} required>{windows.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+    <Field label="Type of unavailability"><select value={kind} onChange={e=>setKind(e.target.value)}><option value="short_break">Short break (no approval needed)</option><option value="staff_leave">Half-day / planned leave (admin approval)</option></select></Field>
+    <Field label="Starts at"><input type="datetime-local" required min={localDateTimeValue(Date.now())} value={start} onChange={e=>setStart(e.target.value)}/></Field>
+    <Field label="Ends at"><input type="datetime-local" required min={start} value={end} onChange={e=>setEnd(e.target.value)}/></Field>
+    {kind==="short_break"?<p className="muted">Short breaks take effect immediately for this time range. Any booked or checked-in token overlapping the break is cancelled and the affected students are notified. The window reopens automatically at the selected end time.</p>:<><Field label="Reason for leave"><textarea required rows="3" minLength="3" value={reason} onChange={e=>setReason(e.target.value)} placeholder="Reason for the leave request"/></Field><p className="muted">The leave remains pending until the administrator approves it. Students are notified and overlapping bookings are cancelled only after approval.</p></>}
+    <div className="modal-actions"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving||!windowId}>{saving?"Saving…":kind==="short_break"?"Schedule break":"Submit leave request"} <ArrowRight size={15}/></Button></div>
+  </form></Modal>;
 }
 
 function AdminWorkspace({go}) {
