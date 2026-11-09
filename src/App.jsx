@@ -6,7 +6,7 @@ import {
   LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, RefreshCw,
   Search, Settings, Shield, ShieldCheck, Ticket, UserCheck, UserPlus, Users,
   WalletCards, X, Zap, ClipboardList, CircleHelp, BarChart3, KeyRound, Save,
-  Ban, RotateCcw, CalendarClock, GraduationCap, Trash2,
+  Ban, RotateCcw, CalendarClock, GraduationCap, Trash2, Landmark,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 
@@ -444,12 +444,13 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
     if(e){setError(friendlyErrorMessage(e,"We couldn't cancel that appointment. Please try again."));return;}
     await load();notify("Token cancelled successfully.");
   }
+  function openServiceBooking(workId){setSelectedWork(workId);setSelectedWindow(windows.find(w=>w.work_id===workId)?.id||"");setSelectedSlot("");go("/student/book");}
   async function signOut(){await supabase.auth.signOut();onSignedOut();go("/");}
 
   if(loading&&!profile)return <LoadingScreen text="Opening your student portal…"/>;
   return <PortalFrame role="student" profile={profile} nav={nav} active={page} go={go} onSignOut={signOut} notifications={notificationState.notifications} notificationPermission={notificationState.permission} onEnableNotifications={notificationState.enable} onMarkNotificationRead={notificationState.markRead} onMarkAllNotificationsRead={notificationState.markAllRead}>
     {error&&<div className="inline-error" role="alert"><AlertCircle size={16}/><span>{error}</span><button type="button" aria-label="Dismiss message" title="Dismiss message" onClick={()=>setError("")}>Dismiss</button></div>}
-    {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} estimates={etas} go={go} setSelectedWork={setSelectedWork}/>}
+    {page==="overview"&&<StudentOverview profile={profile} services={services} windows={windows} tokens={tokens} upcoming={upcoming} estimates={etas} go={go} onSelectService={openServiceBooking}/>}
     {page==="book"&&<StudentBooking services={services} windows={windows} slots={slots} slotUsage={slotUsage} unavailableSlots={unavailableSlots} tokens={tokens} selectedWork={selectedWork} setSelectedWork={setSelectedWork} selectedWindow={selectedWindow} setSelectedWindow={setSelectedWindow} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} onBook={book}/>}
     {page==="tokens"&&<StudentTokenPage tokens={tokens} windows={windows} services={services} estimates={etas} onCancel={cancel} go={go}/>}
     {page==="profile"&&<ProfilePage profile={profile} role="student"/>}
@@ -457,7 +458,7 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
   </PortalFrame>;
 }
 
-function StudentOverview({profile,services,windows,tokens,upcoming,estimates,go,setSelectedWork}) {
+function StudentOverview({profile,services,windows,tokens,upcoming,estimates,go,onSelectService}) {
   const active=tokens.filter(t=>ACTIVE.includes(t.status)).length;
   const completed=tokens.filter(t=>t.status==="completed").length;
   return <>
@@ -469,7 +470,7 @@ function StudentOverview({profile,services,windows,tokens,upcoming,estimates,go,
         {upcoming?<div className="next-token-card"><div className="next-token-number"><small>YOUR TOKEN</small><strong>#{String(upcoming.token_number).padStart(2,"0")}</strong><Status value={upcoming.status}/></div><div className="next-token-detail"><span><small>Service window</small><b>{windows.find(w=>w.id===upcoming.window_id)?.name||"Campus counter"}</b></span><span><small>Appointment</small><b>{fmtDateTime(upcoming.slot?.starts_at||upcoming.booked_at)}</b></span><span><small>Queue position</small><b>{estimates?.[upcoming.id]?.queue_position??upcoming.queue_position??"—"}</b></span><span><small>Estimated turn</small><b>{fmtDateTime(estimates?.[upcoming.id]?.estimated_at)}</b></span></div></div>:<EmptyState icon={<Ticket/>} title="No upcoming tokens" text="Book a service and your appointment will appear here." action={<Button size="small" onClick={()=>go("/student/book")}>Book a token</Button>}/>}
       </Panel>
       <Panel title="Popular campus services" sub="Get started with a campus essential.">
-        <div className="shortcut-list">{services.slice(0,5).map((s,i)=><button type="button" className="shortcut-row" key={s.id} onClick={()=>{setSelectedWork(s.id);go("/student/book");}}><IconTile tone={i%2?"blue":""}>{i===0?<FileText/>:i===1?<FileCheck2/>:i===2?<WalletCards/>:<ClipboardList/>}</IconTile><span><b>{s.name}</b><small>{s.avg_service_minutes} min · Average service time</small></span><ChevronRight size={17}/></button>)}</div>
+        <div className="shortcut-list">{services.slice(0,5).map((s,i)=><button type="button" className="shortcut-row" key={s.id} onClick={()=>onSelectService(s.id)}><IconTile tone={i%2?"blue":""}>{i===0?<FileText/>:i===1?<FileCheck2/>:i===2?<WalletCards/>:<ClipboardList/>}</IconTile><span><b>{s.name}</b><small>{s.avg_service_minutes} min · Average service time</small></span><ChevronRight size={17}/></button>)}</div>
       </Panel>
     </div>
   </>;
@@ -688,7 +689,7 @@ function AdminWorkspace({go}) {
   const notify=(s)=>{setToast(s);window.clearTimeout(notify.timer);notify.timer=window.setTimeout(()=>setToast(""),3400);};
   async function refresh(){
     const result=await adminCall(token,"dashboard");
-    setData(result);
+    setData(result);setError("");
     return result;
   }
   useEffect(()=>{
