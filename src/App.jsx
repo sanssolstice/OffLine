@@ -408,9 +408,9 @@ function StudentWorkspace({session,path,go,onSignedOut}) {
         const matchingWindow=(ws.data||[]).find(x=>x.work_id===defaultWorkId);
         if(matchingWindow)setSelectedWindow(matchingWindow.id);
       }
-    } catch(e){setError(friendlyErrorMessage(e,"We couldn't load your campus portal. Refresh the page and try again."));}
+    } catch(e){if(!profile)setError(friendlyErrorMessage(e,"We couldn't load your campus portal. Refresh the page and try again."));}
     finally{setLoading(false);}
-  },[session.user.id,go,onSignedOut,selectedWork,selectedWindow]);
+  },[session.user.id,go,onSignedOut,selectedWork,selectedWindow,profile]);
   useEffect(()=>{load();},[session.user.id]);
   useEffect(()=>{
     const channel=supabase.channel("offline-student-"+session.user.id)
@@ -554,9 +554,9 @@ function StaffWorkspace({session,path,go,onSignedOut}) {
       setEtas(Object.fromEntries((etaResult.data||[]).map(x=>[x.token_id,x])));
       setTokens((t.data||[]).filter(x=>assignedIds.includes(x.window_id)).map(x=>({...x,student_name:x.student?.full_name||"Student",student_college_id:x.student?.college_id||""})));
       if(!windowId&&w.data?.[0])setWindowId(w.data[0].id);
-    }catch(e){setError(friendlyErrorMessage(e,"We couldn't load your staff workspace. Refresh the page and try again."));}
+    }catch(e){if(!profile)setError(friendlyErrorMessage(e,"We couldn't load your staff workspace. Refresh the page and try again."));}
     finally{setLoading(false);}
-  },[session.user.id,go,onSignedOut,windowId]);
+  },[session.user.id,go,onSignedOut,windowId,profile]);
   useEffect(()=>{load();},[session.user.id]);
   useEffect(()=>{
     const channel=supabase.channel("offline-staff-"+session.user.id)
