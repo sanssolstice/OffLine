@@ -776,44 +776,6 @@ function AdminWorkspace({go}) {
     }catch(e){setError(e.message||"Account could not be created.");}
     finally{setSaving(false);}
   }
-  async function provisionTeam(){
-    const team=[
-      {full_name:"Aditya Soni",email:"aditya.soni@offline.edu"},
-      {full_name:"Twinkal",email:"twinkal@offline.edu"},
-      {full_name:"Shruti Singh",email:"shruti.singh@offline.edu"},
-      {full_name:"Aishmanya Nishi",email:"aishmanya.nishi@offline.edu"},
-      {full_name:"Bhumika Rajesh",email:"bhumika.rajesh@offline.edu"},
-      {full_name:"Md. Jansheen Alam",email:"md.jansheen.alam@offline.edu"},
-      {full_name:"Siya Chandna",email:"siya.chandna@offline.edu"},
-    ];
-    const existing=team.filter(person=>data.users.some(user=>user.role==="student"&&user.full_name.trim().toLowerCase()===person.full_name.toLowerCase()));
-    const missing=team.filter(person=>!existing.some(found=>found.full_name===person.full_name)&&!data.users.some(user=>(user.email||"").toLowerCase()===person.email.toLowerCase()));
-    if(!missing.length){notify("All teammate names already have student accounts.");return;}
-    let nextId=Math.max(2,...data.users.map(user=>{
-      const match=String(user.college_id||"").match(/^OFF-STU-(\d+)$/);
-      return match?Number(match[1]):0;
-    }))+1;
-    setSaving(true);setError("");
-    const created=[];const failures=[];
-    try{
-      for(const person of missing){
-        const payload={
-          role:"student",full_name:person.full_name,email:person.email,
-          college_id:"OFF-STU-"+String(nextId++).padStart(3,"0"),
-          password:makePassword("Stu!")
-        };
-        try{
-          const result=await adminCall(token,"create_user",payload);
-          if(result?.user)created.push(result.user);
-        }catch(e){failures.push(person.full_name+": "+(e.message||"Creation failed"));}
-      }
-      if(created.length)setCreatedCredentials(created);
-      await refresh();
-      if(failures.length)setError("Created "+created.length+" account(s). Some need attention: "+failures.join(" · "));
-      else notify("Created "+created.length+" teammate account(s); skipped "+existing.length+" existing account(s).");
-    }catch(e){setError(e.message||"Could not provision teammate accounts.");}
-    finally{setSaving(false);}
-  }
   async function updateUser(payload){
     setSaving(true);
     try{await adminCall(token,"update_user",payload);await refresh();notify("Account updated.");}
@@ -901,7 +863,7 @@ function AdminWorkspace({go}) {
       <div className="portal-content">
         {error&&<div className="inline-error"><AlertCircle size={16}/>{error}<button onClick={()=>setError("")}><X size={14}/></button></div>}
         {page==="overview"&&<AdminOverview data={data} todayTokens={todayTokens} activeTokens={activeTokens} openCount={openCount} setPage={setPage} seedDemo={seedDemo} saving={saving}/>}
-        {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onProvisionTeam={provisionTeam} onUpdate={updateUser} onReset={resetPassword} onDelete={deleteAccount} onSeed={seedDemo} saving={saving}/>}
+        {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onUpdate={updateUser} onReset={resetPassword} onDelete={deleteAccount} onSeed={seedDemo} saving={saving}/>}
         {page==="services"&&<AdminServices data={data} onAdd={()=>setModal("service")} onEdit={s=>{setModal("service");setEditRecord(s);}} onSave={saveService} saving={saving}/>}
         {page==="windows"&&<AdminWindows data={data} onAdd={()=>setModal("window")} onEdit={w=>{setModal("window");setEditRecord(w);}} onSave={saveWindow} onStatus={setWindowStatus} onCloseWindow={w=>{setClosureWindow(w);setModal("closure");}} onReview={reviewInterruption} saving={saving}/>}
         {page==="bookings"&&<AdminBookings data={data}/>}
@@ -934,13 +896,13 @@ function AdminOverview({data,todayTokens,activeTokens,openCount,setPage,seedDemo
   </>;
 }
 
-function AdminPeople({users,search,setSearch,onCreate,onProvisionTeam,onUpdate,onReset,onDelete,onSeed,saving}) {
+function AdminPeople({users,search,setSearch,onCreate,onUpdate,onReset,onDelete,onSeed,saving}) {
   const [resetUser,setResetUser]=useState(null);
   const [deleteUser,setDeleteUser]=useState(null);
   const [deleteConfirmation,setDeleteConfirmation]=useState("");
   const [newPassword,setNewPassword]=useState("");
   return <>
-    <PageHeading eyebrow="PEOPLE & ACCESS" title="People and accounts." sub="Create and manage the student and staff accounts that can access OffLine." action={<div className="people-heading-actions"><Button variant="outline" onClick={onProvisionTeam}><Users size={15}/> Create teammate IDs</Button><Button onClick={onCreate}><UserPlus size={16}/> Create account</Button></div>}/>
+    <PageHeading eyebrow="PEOPLE & ACCESS" title="People and accounts." sub="Create and manage the student and staff accounts that can access OffLine." action={<Button onClick={onCreate}><UserPlus size={16}/> Create account</Button>}/>
     {users.length===0&&<div className="seed-banner compact"><div><span><Zap/></span><div><b>No accounts have been provisioned yet.</b><p>Seed sample users for the prototype, or create your first account.</p></div></div><Button disabled={saving} onClick={onSeed}>Seed demo accounts</Button></div>}
     <div className="people-summary"><div><b>{users.filter(u=>u.role==="student").length}</b><small>Students</small></div><div><b>{users.filter(u=>u.role==="staff").length}</b><small>Staff</small></div><div><b>{users.filter(u=>u.account_status==="inactive").length}</b><small>Inactive</small></div></div>
     <Panel title="Directory" sub="All accounts issued by the administrator."><div className="table-toolbar"><div className="search-control"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name, email or ID"/></div><span className="results-count">{users.length} account(s)</span></div>
