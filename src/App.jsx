@@ -808,7 +808,7 @@ function AdminWorkspace({go}) {
         {page==="overview"&&<AdminOverview data={data} todayTokens={todayTokens} activeTokens={activeTokens} openCount={openCount} setPage={setPage} seedDemo={seedDemo} saving={saving}/>}
         {page==="people"&&<AdminPeople users={filteredUsers} search={search} setSearch={setSearch} onCreate={()=>setModal("user")} onUpdate={updateUser} onReset={resetPassword} onDelete={deleteAccount} onSeed={seedDemo} saving={saving}/>}
         {page==="services"&&<AdminServices data={data} onAdd={()=>setModal("service")} onEdit={s=>{setModal("service");setEditRecord(s);}} onSave={saveService} saving={saving}/>}
-        {page==="windows"&&<AdminWindows data={data} onAdd={()=>setModal("window")} onEdit={w=>{setModal("window");setEditRecord(w);}} onSave={saveWindow} onStatus={setWindowStatus} onCloseWindow={w=>{setClosureWindow(w);setModal("closure");}} onReview={reviewInterruption} saving={saving}/>
+        {page==="windows"&&<AdminWindows data={data} onAdd={()=>setModal("window")} onEdit={w=>{setModal("window");setEditRecord(w);}} onSave={saveWindow} onStatus={setWindowStatus} onCloseWindow={w=>{setClosureWindow(w);setModal("closure");}} onReview={reviewInterruption} saving={saving}/>}
         {page==="bookings"&&<AdminBookings data={data} onReview={decideBreak} saving={saving}/>}
         {page==="analytics"&&<AdminAnalytics data={data} tokens={reportTokens} from={reportRange.from} to={reportRange.to} onRangeChange={(key,value)=>setReportRange(prev=>({...prev,[key]:value}))} loading={reportLoading} error={reportError}/>}
       </div>
