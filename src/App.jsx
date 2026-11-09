@@ -730,10 +730,10 @@ function AdminWorkspace({go}) {
       {full_name:"Siya Chandna",email:"siya.chandna@offline.edu"},
     ];
     const existing=team.filter(person=>data.users.some(user=>user.role==="student"&&user.full_name.trim().toLowerCase()===person.full_name.toLowerCase()));
-    const missing=team.filter(person=>!existing.some(found=>found.full_name===person.full_name));
+    const missing=team.filter(person=>!existing.some(found=>found.full_name===person.full_name)&&!data.users.some(user=>(user.email||"").toLowerCase()===person.email.toLowerCase()));
     if(!missing.length){notify("All teammate names already have student accounts.");return;}
     let nextId=Math.max(2,...data.users.map(user=>{
-      const match=String(user.college_id||"").match(/^OFF-STU-(\\d+)$/);
+      const match=String(user.college_id||"").match(/^OFF-STU-(\d+)$/);
       return match?Number(match[1]):0;
     }))+1;
     setSaving(true);setError("");
