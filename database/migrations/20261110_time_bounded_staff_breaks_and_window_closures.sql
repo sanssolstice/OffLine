@@ -102,8 +102,9 @@ BEGIN
         to_char(v_interrupt.starts_at AT TIME ZONE 'Asia/Kolkata','DD Mon HH12:MI AM'),
         to_char(v_interrupt.ends_at AT TIME ZONE 'Asia/Kolkata','DD Mon HH12:MI AM'),
         to_char(v_interrupt.ends_at AT TIME ZONE 'Asia/Kolkata','DD Mon HH12:MI AM'),
-        COALESCE(NULLIF(v_interrupt.reason,''),''),
-      'window')
+        COALESCE(NULLIF(v_interrupt.reason,''),'')
+      ),
+      'window'
     );
   END IF;
 
@@ -260,11 +261,14 @@ DECLARE
   v_window_name text;
 BEGIN
   IF v_role <> 'service_role' THEN RAISE EXCEPTION 'Administrator service access required'; END IF;
-  SELECT x.*,w.name INTO v_row,v_window_name
+  SELECT x.* INTO v_row
   FROM public.offline_window_interruptions x
-  JOIN public.offline_windows w ON w.id=x.window_id
   WHERE x.id=p_interruption_id
-  FOR UPDATE OF x;
+  FOR UPDATE;
+
+  SELECT w.name INTO v_window_name
+  FROM public.offline_windows w
+  WHERE w.id=v_row.window_id;
   IF NOT FOUND OR v_row.status<>'pending' OR v_row.kind<>'staff_leave' THEN
     RAISE EXCEPTION 'This leave request is no longer pending';
   END IF;
