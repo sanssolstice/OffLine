@@ -45,16 +45,73 @@ const IconTile = ({children,tone=""}) => <span className={"icon-tile "+tone}>{ch
 const Metric = ({label,value,hint,icon,tone=""}) => <article className="metric-card"><div className="metric-top"><span>{label}</span><IconTile tone={tone}>{icon}</IconTile></div><strong>{value}</strong><small>{hint}</small></article>;
 const Field = ({label,children,hint}) => <label className="field"><span>{label}</span>{children}{hint&&<small>{hint}</small>}</label>;
 
+function friendlyErrorMessage(value,fallback="We couldn't complete that request. Please try again.") {
+  const raw=typeof value==="string"?value:(value?.message||"");
+  const message=String(raw).trim().toLowerCase();
+  if(!message)return fallback;
+  if(message.includes("already have a token")||message.includes("already have a booking")||message.includes("already booked for this service"))return "You already have a booking for this service on that date. Cancel it before booking again.";
+  if(message.includes("slot is full")||message.includes("no available slots"))return "That appointment time is full. Please choose another time.";
+  if(message.includes("window is not open")||message.includes("not accepting bookings"))return "This service counter is not accepting bookings right now. Please choose another counter or time.";
+  if(message.includes("window is unavailable during the selected slot")||message.includes("unavailable during the selected slot"))return "This counter is unavailable during that time. Please choose a slot after it reopens.";
+  if(message.includes("already has a break")||message.includes("already has a closure")||message.includes("already has a break or leave")||message.includes("overlaps another"))return "There's already a break or closure during that time. Please choose a different time range.";
+  if(message.includes("short break must fit within today"))return "A short break must start and finish today. Please adjust the time range.";
+  if(message.includes("reason is required")||message.includes("reason for leave"))return "Please enter a short reason before submitting the request.";
+  if(message.includes("valid future time range")||message.includes("end time must be"))return "Please check the start and end times. The end time must be after the start time.";
+  if(message.includes("only for today and tomorrow"))return "Appointments can only be booked for today or tomorrow.";
+  if(message.includes("slot has already started")||message.includes("already started"))return "That appointment time has already started. Please choose a later time.";
+  if(message.includes("not assigned to this service window"))return "You can only manage service counters assigned to your account.";
+  if(message.includes("active staff account is required")||message.includes("active student account is required"))return "This account is not active for that action. Please contact your campus administrator.";
+  if(message.includes("leave request is no longer pending")||message.includes("no longer pending"))return "This leave request has already been reviewed. Refresh the page to see its latest status.";
+  if(message.includes("invalid admin passcode")||message.includes("incorrect passcode")||message.includes("passcode is incorrect"))return "That administrator passcode wasn't recognised. Please check it and try again.";
+  if(message.includes("invalid login credentials")||message.includes("invalid credentials")||message.includes("invalid password"))return "The email address or password is incorrect. Please check your details and try again.";
+  if(message.includes("account is inactive"))return "This account is currently inactive. Please contact your campus administrator.";
+  if(message.includes("not been provisioned")||message.includes("account not found"))return "This account hasn't been set up yet. Please contact your campus administrator.";
+  if(message.includes("already registered")||message.includes("already exists")||message.includes("duplicate key")||message.includes("email address is already"))return "An account with those details already exists. Check the email address and ID.";
+  if(message.includes("session")&&(message.includes("expired")||message.includes("invalid")||message.includes("missing")))return "Your administrator session has expired. Please sign in again.";
+  if(message.includes("not found"))return "We couldn't find that record. Refresh the page and try again.";
+  return fallback;
+}
+
+async function edgeFunctionErrorDetail(error) {
+  const context=error?.context;
+  if(!context||typeof context.json!=="function")return "";
+  try {
+    const response=typeof context.clone==="function"?context.clone():context;
+    const payload=await response.json();
+    return payload?.error||payload?.message||payload?.details||"";
+  } catch {
+    return "";
+  }
+}
+
+function adminActionFallback(action) {
+  const messages={
+    dashboard:"We couldn't load the administration area. Refresh the page and try again.",
+    admin_notifications:"Notifications are temporarily unavailable. Please refresh in a moment.",
+    report:"We couldn't load this report. Check the date range and try again.",
+    create_user:"We couldn't create this account. Check the details and try again.",
+    update_user:"We couldn't update this account. Please try again.",
+    delete_user:"We couldn't delete this account. Make sure it is inactive and has no active bookings.",
+    reset_password:"We couldn't reset the password. Please try again.",
+    save_service:"We couldn't save this service. Check the details and try again.",
+    save_window:"We couldn't save this service window. Check the details and try again.",
+    set_window_status:"We couldn't update this service window. Please try again.",
+    schedule_window_closure:"We couldn't schedule the closure. Check the selected time range and try again.",
+    review_interruption:"We couldn't update this leave request. Refresh the page and try again.",
+  };
+  return messages[action]||"We couldn't complete that action. Please try again. If it continues, contact your campus administrator.";
+}
+
 async function adminCall(token,action,payload={}) {
   const {data,error}=await supabase.functions.invoke("offline-admin",{
     body:{action,...payload},
     headers:{"x-admin-session":token},
   });
   if(error) {
-    const message=error.message||"Admin request failed.";
-    throw new Error(message);
+    const detail=await edgeFunctionErrorDetail(error);
+    throw new Error(friendlyErrorMessage(detail||error.message,adminActionFallback(action)));
   }
-  if(data?.error)throw new Error(data.error);
+  if(data?.error)throw new Error(friendlyErrorMessage(data.error,adminActionFallback(action)));
   return data;
 }
 
